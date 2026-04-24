@@ -66,12 +66,14 @@ async function readIndicatorData(client) {
         var atrVal = null;
         var ema200 = null;
         var macdLine = null;
-        var macdLineTitles = ['macd', 'macd line', 'macd value', 'macdline', 'macd_line'];
         var sources = model.model().dataSources();
         for (var si = 0; si < sources.length; si++) {
           var s = sources[si];
           if (!s.metaInfo) continue;
           try {
+            var meta = s.metaInfo();
+            var name = (meta.description || meta.shortDescription || '').toLowerCase();
+            var isMacdUlt = name.indexOf('cm_macd') !== -1 || name.indexOf('macd_ult') !== -1;
             var dwv = s.dataWindowView();
             if (!dwv) continue;
             var items = dwv.items();
@@ -82,7 +84,7 @@ async function readIndicatorData(client) {
               var v = parseFloat(item._value.replace(/\u2212/g, '-').replace(/,/g, ''));
               if (item._title === 'ATR Trailing Stop' && !isNaN(v)) atrVal = v;
               if (item._title === 'EMA 200' && !isNaN(v)) ema200 = v;
-              if (macdLineTitles.indexOf(item._title.toLowerCase()) !== -1 && !isNaN(v)) macdLine = v;
+              if (isMacdUlt && item._title === 'MACD' && !isNaN(v)) macdLine = v;
             }
           } catch(e) {}
         }
