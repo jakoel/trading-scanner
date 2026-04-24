@@ -131,14 +131,14 @@ function formatTelegramMessages(results) {
   function formatStock(r) {
     const pct = ((r.price - r.atr) / r.atr * 100).toFixed(1);
     const sign = r.price > r.atr ? '+' : '';
-    return `*${r.symbol}* $${r.price} (${sign}${pct}%)\n  RSI ${r.rsi} | ${r.trend} | ${r.momentum}\n  _${r.summary}_`;
+    return `*${r.symbol}* $${r.price} (${sign}${pct}%)\n  _${r.summary}_`;
   }
 
   const macdGreenCount = results.filter(r => r.macdSignal === 'MACD TURNED GREEN').length;
   const macdPositiveCount = results.filter(r => r.macdSignal === 'MACD TURNED POSITIVE').length;
 
   const sections = [];
-  if (buys.length) sections.push({ title: 'Potential Buys (just above ATR)', items: buys });
+  if (buys.length) sections.push({ title: '🎯 Potential Buys (just above ATR)', items: buys });
 
   if (!sections.length && !macdGreenCount && !macdPositiveCount) return [];
 
@@ -165,7 +165,7 @@ function formatTelegramMessages(results) {
     if (!items.length) continue;
     let secText = `\n${title}:\n`;
     for (const r of items) {
-      secText += `⚡ *${r.symbol}* $${r.price}\n`;
+      secText += `*${r.symbol}* $${r.price}\n`;
     }
     if ((current + secText).length > 3800) {
       messages.push(current.trim());
