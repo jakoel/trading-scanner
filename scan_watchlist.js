@@ -325,6 +325,8 @@ async function main() {
   } else {
     console.log('No results to send.');
   }
+
+  process.exit(0);
 }
 
 main().catch(e => {
