@@ -125,7 +125,12 @@ function generateSummary(data) {
 
 /** Format Telegram messages, splitting into chunks under 4000 chars */
 function formatTelegramMessages(results) {
-  const buys = results.filter(r => r.price > r.atr && ((r.price - r.atr) / r.atr * 100) <= 3);
+  const buys = results.filter(r =>
+    r.price > r.atr &&
+    ((r.price - r.atr) / r.atr * 100) <= 3 &&
+    r.ema200 && r.price > r.ema200 &&
+    r.htfTrend === 'BULLISH'
+  );
   const running = results.filter(r => r.price > r.atr && ((r.price - r.atr) / r.atr * 100) > 3);
 
   function formatStock(r) {
