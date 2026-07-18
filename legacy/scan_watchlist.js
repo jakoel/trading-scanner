@@ -224,7 +224,9 @@ async function main() {
 
       const summary = generateSummary({ price, atr, ema200, rsi, macdHist, trend, htfTrend, momentum, divergence, volume });
 
-      const entry = { symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, trend, htfTrend, momentum, divergence, volume, summary };
+      // No historical ATR Trailing Stop is available from CDP (only today's snapshot),
+      // so this legacy path can't detect a real reclaim event — see architecture.md.
+      const entry = { symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo: null, trend, htfTrend, momentum, divergence, volume, summary };
       results.push(entry);
 
       const pct = ((price - atr) / atr * 100).toFixed(1);
@@ -245,7 +247,7 @@ async function main() {
   if (results.length > 0) {
     const msgs = formatTelegramMessages(results);
     if (msgs.length === 0) {
-      console.log('\nNo buys or running stocks — skipping Telegram.');
+      console.log('\nNo buys or MACD signals — skipping Telegram.');
     } else {
       console.log(`\nSending Telegram alert (${msgs.length} message(s))...`);
       for (const msg of msgs) {

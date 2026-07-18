@@ -77,11 +77,13 @@ Both scanners import this module, so behavior never drifts between the headless 
 
 | Signal | Condition |
 |--------|-----------|
-| Potential Buy | `price > atr` (ATR Trailing Stop) AND within 3% above, `price > ema200`, `htfTrend === 'BULLISH'` |
+| 🎯 Potential Buy | `price` crossed from at/below the ATR Trailing Stop to above it within the last `ATR_LOOKBACK_DAYS` (5) trading days (`detectAtrReclaim()`), AND is still above it today, AND `price > ema200`, AND `htfTrend === 'BULLISH'` |
 | ⚡ MACD TURNED GREEN | Histogram crossed from ≤0 to >0 within the last 5 trading days, AND today's histogram is still >0. Independent of the MACD line's sign — an early heads-up if the line is still negative, or a continuation signal if the line is already positive. |
 | ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 within the last 5 trading days, AND is still >0 today. A more mature momentum confirmation than TURNED GREEN. |
 
 The two MACD signals are independent and can both fire for the same symbol (e.g. histogram crossed green a few days before the line itself crossed positive).
+
+The Potential Buy signal originally used a static "within 3% above the ATR line" proximity check — a state check, not an event check, so a stock drifting slowly down toward its own (flat) trailing-stop line would get flagged every single day, not just the day it actually crossed. `detectAtrReclaim()` fixes this the same way the MACD signals were fixed: it requires an actual crossover within the lookback window (seen concretely with BRK-B, which sat continuously above its stop for 10+ days while just drifting closer — the old logic would've flagged it daily, the new logic correctly shows no signal). The legacy CDP scanner can't compute this, since CDP only exposes today's ATR Trailing Stop value, not per-bar history — its entries always carry `atrReclaimDaysAgo: null`, so it simply won't produce Potential Buy signals.
 
 `generateSummary()` adds inline annotations (RSI oversold/overbought, mixed trend, divergence, momentum fading, high volume, ATR proximity, EMA200 position).
 
