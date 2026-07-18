@@ -1,0 +1,14 @@
+{
+  "name": "watchlist-summary",
+  "version": "1.0.0",
+  "description": "Standalone TradingView watchlist scanner — reads indicator data via CDP and sends alerts to Telegram",
+  "type": "module",
+  "scripts": {
+    "scan": "node scan_watchlist.js",
+    "scan:headless": "node scan_headless.js"
+  },
+  "dependencies": {
+    "chrome-remote-interface": "^0.33.2",
+    "yahoo-finance2": "^4.0.0"
+  }
+}
