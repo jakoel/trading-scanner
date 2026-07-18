@@ -46,5 +46,3 @@ timeout /t 5 /nobreak >nul
 echo.
 echo Running watchlist scanner...
 node "%~dp0scan_watchlist.js"
-echo.
-pause
