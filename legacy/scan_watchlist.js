@@ -10,20 +10,20 @@
  *   3. telegram.config.json with botToken and chatId
  *   4. watchlist.txt with one symbol per line
  *
- * Usage:
- *   node scan_watchlist.js
+ * Usage (from repo root):
+ *   node legacy/scan_watchlist.js
  */
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import CDP from 'chrome-remote-interface';
-import { sendMessage } from './telegram.js';
-import { detectMacdSignals, generateSummary, formatTelegramMessages, MACD_LOOKBACK_DAYS } from './lib/report.js';
+import { sendMessage } from '../telegram.js';
+import { detectMacdSignals, generateSummary, formatTelegramMessages, MACD_LOOKBACK_DAYS } from '../lib/report.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const watchlist = readFileSync(join(__dirname, 'watchlist.txt'), 'utf-8')
+const watchlist = readFileSync(join(__dirname, '..', 'watchlist.txt'), 'utf-8')
   .split('\n')
   .map(s => s.trim())
   .filter(s => s && !s.startsWith('#'));

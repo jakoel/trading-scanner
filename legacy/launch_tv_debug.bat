@@ -36,5 +36,5 @@ if errorlevel 1 goto WAIT_LOOP
 
 echo.
 echo TradingView is running with CDP on port %CDP_PORT%!
-echo You can now run: node scan_watchlist.js
+echo You can now run: node legacy/scan_watchlist.js (from repo root)
 pause

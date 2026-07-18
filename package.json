@@ -1,10 +1,10 @@
 {
   "name": "watchlist-summary",
   "version": "1.0.0",
-  "description": "Standalone TradingView watchlist scanner — reads indicator data via CDP and sends alerts to Telegram",
+  "description": "Watchlist scanner — headless indicator engine (primary) with a legacy TradingView/CDP scanner kept for local cross-checking",
   "type": "module",
   "scripts": {
-    "scan": "node scan_watchlist.js",
+    "scan": "node legacy/scan_watchlist.js",
     "scan:headless": "node scan_headless.js"
   },
   "dependencies": {

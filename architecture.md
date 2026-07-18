@@ -2,60 +2,86 @@
 
 ## Overview
 
-Standalone Node.js scanner (no MCP, no API tokens). Connects directly to TradingView Desktop via CDP, scans all symbols in `watchlist.txt`, and sends a formatted report to Telegram.
+Headless Node.js scanner — no TradingView Desktop, no CDP, no browser. Pulls daily OHLCV per symbol from Yahoo Finance (persisted incrementally in `data/bars/`), recomputes the full indicator suite locally, detects MACD signals over a lookback window, and sends a formatted report to Telegram. Runs on a schedule via GitHub Actions.
 
 ```
-Node.js Scanner ←→ CDP (localhost:9222) ←→ TradingView Desktop (Electron)
-                                                       ↓
-                                             Telegram Bot API
+GitHub Actions (cron, Mon-Fri 16:00 Israel time)
+        ↓
+scan_headless.js
+        ↓
+lib/bars.js  ──fetch missing bars──>  Yahoo Finance
+        ↓ (persisted OHLCV)
+data/bars/<SYMBOL>.csv
+        ↓
+lib/indicators.js  (full indicator suite, pure function)
+        ↓
+lib/report.js  (signal detection + Telegram formatting)
+        ↓
+Telegram Bot API
 ```
+
+A separate legacy path (`legacy/scan_watchlist.js`) still exists, driving TradingView Desktop directly via CDP. It's not part of the automated pipeline — kept only for manually cross-checking `lib/indicators.js` against the live Pine indicator if drift is ever suspected.
 
 ## File Structure
 
 ```
 watchlist-summary/
-├── scan_watchlist.js     # Main script — all scanning, signal detection, Telegram formatting
-├── telegram.js           # Thin wrapper: sendMessage(text) → Telegram Bot API
-├── watchlist.txt         # One symbol per line (e.g. AAPL, MSFT). # lines are comments.
-├── telegram.config.json  # { "botToken": "...", "chatId": "..." }
-└── package.json          # Dependencies: chrome-remote-interface, ws, commander
+├── scan_headless.js         # Primary entry point — no TradingView dependency
+├── lib/
+│   ├── bars.js               # Persisted OHLCV, incremental Yahoo Finance fetch
+│   ├── indicators.js         # Pure port of the Pine indicator (see reference/)
+│   └── report.js             # Shared signal detection + Telegram formatting
+├── data/bars/<SYMBOL>.csv    # One file per ticker: date,open,high,low,close,volume
+├── reference/
+│   ├── macd.txt               # Pine source for CM_MacD_Ult_MTF (historical reference only)
+│   └── indicatorSuite.txt     # Pine source for "MACD & RSI Smart Momentum Pro" — the ground truth lib/indicators.js ports
+├── legacy/
+│   ├── scan_watchlist.js      # Original CDP-based scanner (local cross-check only)
+│   ├── scan.bat               # Launches TradingView + runs legacy/scan_watchlist.js
+│   └── launch_tv_debug.bat    # Launches TradingView Desktop with CDP enabled
+├── .github/workflows/scan.yml # Cron trigger, runs scan_headless.js, commits data/bars/
+├── telegram.js                # sendMessage(text) → Telegram Bot API
+├── watchlist.txt               # One symbol per line. # lines are comments.
+├── telegram.config.json        # { "botToken": "...", "chatId": "..." }
+└── package.json
 ```
 
-## Prerequisites
+## Data Persistence (`lib/bars.js`)
 
-1. TradingView Desktop running (launched via `tv_launch` MCP tool or manually with `--remote-debugging-port=9222`)
-2. Both indicators loaded and **visible** on the chart:
-   - **"MACD & RSI Smart Momentum Pro [Claude Code]"** — provides RSI, Histogram, Trend (EMA), HTF Trend, Momentum, Divergence, Volume via Pine table, and ATR Trailing Stop + EMA 200 via data window
-   - **CM_MacD_Ult_MTF** — provides MACD line value via data window (title `MACD`), required for MACD signal detection
-3. Chart on daily timeframe (`1D`)
+Each symbol has one CSV under `data/bars/`. On each run:
+1. Read the existing CSV (if any) → get the last stored date.
+2. If that's already today, skip the fetch entirely.
+3. Otherwise fetch only bars *after* that date from Yahoo Finance (normally just the latest 1 bar).
+4. If no CSV exists yet, do one full backfill (~750 calendar days, matching the Pine script's `max_bars_back=500`).
+5. Merge, dedupe by date, trim to the most recent 800 rows, write back.
 
-## Data Extraction
+No indicator state is cached — every run recomputes RSI/MACD/EMA/ATR/ADX fresh from the full stored OHLCV array (~500-800 rows, sub-10ms). Only raw price/volume history persists.
 
-Two parallel extraction paths per symbol:
+## Indicator Port (`lib/indicators.js`)
 
-### 1. Data Window (`readIndicatorData`)
-Iterates all `dataSources`, reads `.dataWindowView().items()` matching by `_title`:
-- `ATR Trailing Stop` → `atr` (from "MACD & RSI Smart Momentum Pro")
-- `EMA 200` → `ema200` (from "MACD & RSI Smart Momentum Pro")
-- `macd` / `macd line` / `macd value` (case-insensitive) → `macdLine` (from CM_MacD_Ult_MTF)
-- Price from `model.mainSeries().bars().last().value[4]`
+A pure function, `computeIndicators(bars)`, ported from `reference/indicatorSuite.txt` ("MACD & RSI Smart Momentum Pro [Swing Edition]"). Validated against live TradingView scrapes — RSI, ADX, Histogram, MACD line, ATR Trailing Stop, Trend, Score, Signal, and Warning all matched exactly (aside from trivial volume-figure rounding from a different data vendor).
 
-### 2. Pine Table (`tableData`)
-Finds the "Momentum Pro" indicator by `meta.description`, reads `_primitivesCollection.dwgtablecells` → maps row[col0] = row[col1]:
-- `RSI`, `Histogram`, `Trend (EMA)`, `HTF Trend`, `Momentum`, `Divergence`, `Volume`
+Key implementation notes:
+- **EMA(12)/EMA(26) → MACD line, EMA(9) signal, histogram** — matches `indicatorSuite.txt`'s `ta.ema(macdLine, signalSmoothing)`. Note this differs from `CM_MacD_Ult_MTF` (`reference/macd.txt`), which uses an **SMA** signal — the two indicators' histograms diverge slightly near zero-crossing points. `lib/indicators.js` follows the EMA-signal version since that's the actual production indicator whose table (RSI/Histogram/Trend/Score/etc.) this scanner reports on.
+- **RSI, ATR, ADX/DMI** — Wilder's RMA smoothing (`rma()`), not SMA — matches Pine's `ta.rsi`/`ta.atr`/`ta.dmi` builtins.
+- **HTF Trend** — not computed separately. The Pine script's higher-timeframe input defaults to `"D"` and this always runs on daily bars already, so `HTF Trend` is always identical to `Trend (EMA)` in this configuration (confirmed against live scrapes).
+- **Pivot-based divergence** (`ta.pivothigh`/`ta.pivotlow`, lookback 14) — a pivot can only be confirmed once 14 *newer* bars exist past it, so "today" is never a confirmed pivot. Same lag as in Pine; not a bug.
+- **ATR Trailing Stop** — sequential, stateful per-bar loop (`indicatorSuite.txt:371-403`), not a simple formula — ports directly.
+- **Confluence score, confirmation bars, signal cooldown** — pure bar-index bookkeeping, ports directly.
 
-MACD line fallback: if not found in data window, checks table keys `MACD`, `MacD`, `MACD Line`.
+## Signal Detection (`lib/report.js`)
 
-## Signal Detection
+Both scanners import this module, so behavior never drifts between the headless and legacy paths.
 
-All signals computed in the main loop after data extraction:
+`MACD_LOOKBACK_DAYS = 5` — a signal stays active for 5 trading days after the actual crossover (still "recent/early"), then clears on its own once the window passes or the state reverses. No persisted "already alerted" state needed — recency is derived fresh each run from the bar history itself.
 
 | Signal | Condition |
 |--------|-----------|
-| Potential Buy | `price > atr` AND within 3% above |
-| Above ATR & Running | `price > atr` AND more than 3% above |
-| ⚡ MACD TURNED GREEN | `macdHistNum > 0` AND `macdLineVal < 0` (histogram green, MACD still negative) |
-| ⚡ MACD TURNED POSITIVE | `macdHistNum > 0` AND `macdLineVal > 0` (MACD line crossed zero) |
+| Potential Buy | `price > atr` (ATR Trailing Stop) AND within 3% above, `price > ema200`, `htfTrend === 'BULLISH'` |
+| ⚡ MACD TURNED GREEN | Histogram crossed from ≤0 to >0 within the last 5 trading days, AND today's histogram is still >0. Independent of the MACD line's sign — an early heads-up if the line is still negative, or a continuation signal if the line is already positive. |
+| ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 within the last 5 trading days, AND is still >0 today. A more mature momentum confirmation than TURNED GREEN. |
+
+The two MACD signals are independent and can both fire for the same symbol (e.g. histogram crossed green a few days before the line itself crossed positive).
 
 `generateSummary()` adds inline annotations (RSI oversold/overbought, mixed trend, divergence, momentum fading, high volume, ATR proximity, EMA200 position).
 
@@ -64,31 +90,27 @@ All signals computed in the main loop after data extraction:
 ```
 *Watchlist Scan*
 
-*Potential Buys (just above ATR):*
+*🎯 Potential Buys (just above ATR):*
 *SYMBOL* $price (+x.x%)
-  RSI 55 | UPTREND | STRENGTHENING
   _just reclaimed ATR, above EMA200_
 
-*Above ATR & Running:*
-...
+⚡ MACD Turned Green:
+*ZETA* $12.50
 
-⚡ *MACD Signals:*
-⚡ *MSFT* $390.00 — MACD TURNED POSITIVE
-⚡ *ZETA* $12.50 — MACD TURNED GREEN
+⚡ MACD Turned Positive:
+*MSFT* $390.00
 ```
 
 Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
 
-## Key Constants
+## GitHub Actions Schedule
 
-| Constant | Value | Purpose |
-|----------|-------|---------|
-| `CDP_PORT` | 9222 | CDP remote debugging port |
-| `SETTLE_MS` | 4000ms | Wait after symbol switch for indicators to load |
-| Retry attempts | 6 × 1500ms | Retry if data not yet available |
+`.github/workflows/scan.yml` triggers Mon-Fri. Israel alternates between UTC+2 (IST, winter) and UTC+3 (IDT, summer), so a single fixed-UTC cron would drift an hour off 16:00 Israel time twice a year. Both possible UTC times are scheduled (`13:00` and `14:00` UTC); a "Check target time" step reads the real `Asia/Jerusalem` wall-clock hour (tzdata handles DST automatically) and only lets the matching run continue past that step. A `workflow_dispatch` trigger is also available for manual runs.
+
+The workflow needs **Settings → Actions → General → Workflow permissions → Read and write** enabled, since it commits updated `data/bars/*.csv` back to the repo after each run.
 
 ## Known Caveats
 
-- MACD line detection depends on the Pine indicator's `plot()` title in the data window. If `macdLineVal` is always null, log `item._title` values for the MACD indicator and add the matching title to `macdLineTitles` in `readIndicatorData`.
-- Unicode minus `−` (U+2212) used by TradingView — all value parsing strips it before `parseFloat`.
-- Stocks below ATR are scanned but excluded from ATR sections. They still appear in ⚡ MACD Signals if applicable.
+- Yahoo Finance is unofficial/unauthenticated — if it ever breaks, Stooq (free, no key, EOD CSV) is the fallback data source to switch `lib/bars.js` to.
+- `V` (Visa) appears twice in `watchlist.txt` — both entries share one `data/bars/V.csv`, this is expected, not a bug.
+- The legacy CDP scanner's `TURNED GREEN`/`TURNED POSITIVE` detection historically sourced its crossover *history* from `CM_MacD_Ult_MTF` (SMA signal) rather than the actual Momentum Pro indicator (EMA signal), because only `CM_MacD_Ult_MTF` exposed real per-bar history via `plots()` at the time. This means the legacy scanner and the headless scanner can occasionally disagree on marginal, near-zero histogram cases (seen with NVO) — the headless version is the more correct one, since it computes true history directly from the actual production indicator's own formula.

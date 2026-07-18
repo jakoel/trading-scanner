@@ -1,40 +1,46 @@
 # Watchlist Scanner — Claude Instructions
 
-Standalone Node.js script that scans a watchlist via TradingView CDP and sends a Telegram report. No MCP, no API tokens required.
+Headless Node.js watchlist scanner. No TradingView Desktop, no CDP, no GUI required — runs standalone or via GitHub Actions on a Mon–Fri schedule (16:00 Israel time).
 
 ## Before touching this project
 
-Read **[architecture.md](./architecture.md)** first — it covers file structure, data extraction paths, all signal conditions, Telegram format, and known caveats. Do not re-analyze from scratch.
+Read **[architecture.md](./architecture.md)** first — it covers file structure, the indicator port, data persistence, signal conditions, Telegram format, and known caveats. Do not re-analyze from scratch.
 
 ## Running the scanner
 
 ```bash
 cd watchlist-summary
-node scan_watchlist.js
+node scan_headless.js
 ```
 
-TradingView Desktop must be running with CDP enabled. If it's not, launch it first:
-- Via MCP: `tv_launch` tool
-- Manually: TradingView Desktop auto-starts with CDP when launched by the MCP server
+No TradingView, no external services beyond Yahoo Finance (for daily bars) and Telegram (for the report). Runs automatically via `.github/workflows/scan.yml`.
 
 ## Key files
 
 | File | Purpose |
 |------|---------|
-| `scan_watchlist.js` | Everything: scanning loop, signal detection, Telegram formatting |
+| `scan_headless.js` | Entry point: pulls bars, computes indicators, detects signals, sends the report |
+| `lib/bars.js` | Persisted per-symbol OHLCV in `data/bars/*.csv`, incrementally fetched via Yahoo Finance |
+| `lib/indicators.js` | Pure reimplementation of the Pine indicator (`reference/indicatorSuite.txt`) — RSI, MACD, ATR, ADX, divergence, confluence score, ATR trailing stop |
+| `lib/report.js` | Shared signal detection (5-day lookback crossovers) + Telegram formatting, used by both scanners |
 | `telegram.js` | `sendMessage(text)` — Telegram Bot API wrapper |
 | `watchlist.txt` | Symbols to scan, one per line (`#` = comment) |
 | `telegram.config.json` | `{ "botToken": "...", "chatId": "..." }` |
+| `.github/workflows/scan.yml` | Mon–Fri 16:00 Israel-time trigger, runs the scan, commits updated `data/bars/*.csv` |
 | `architecture.md` | Full technical reference |
-
-## Indicators required on chart
-
-Both must be **visible** (not hidden) on the TradingView chart, on **1D timeframe**:
-1. **MACD & RSI Smart Momentum Pro [Claude Code]** — provides Pine table data (RSI, trend, histogram, etc.) and ATR Trailing Stop + EMA 200 via data window
-2. **CM_MacD_Ult_MTF** — provides MACD line value via data window (required for MACD signal detection)
+| `legacy/` | Original TradingView/CDP-based scanner — kept for local cross-checking against the live indicator, not used by automation. See `legacy/README` note in architecture.md. |
+| `reference/` | Raw Pine source (`macd.txt`, `indicatorSuite.txt`) that `lib/indicators.js` was ported from |
 
 ## Adding new signals
 
-1. Check `architecture.md` for the data available per symbol
-2. Add detection logic in the main loop (after table extraction, before `generateSummary`)
+1. Check `architecture.md` for what `lib/indicators.js` already computes per bar
+2. Add detection logic in `lib/report.js` (shared by both scanners) so it stays consistent
 3. Either add to `generateSummary()` for inline summary text, or add a new section in `formatTelegramMessages()` for a dedicated report block
+
+## Using the legacy CDP scanner (optional, for cross-checking)
+
+```bash
+node legacy/scan_watchlist.js
+```
+
+Requires TradingView Desktop running with `--remote-debugging-port=9222` and both indicators visible on a 1D chart. Useful for validating `lib/indicators.js` against the live indicator if you ever suspect drift, but not part of the automated pipeline.
