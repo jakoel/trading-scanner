@@ -1,20 +1,6 @@
 # Watchlist Summary Scanner
 
-Standalone Node.js script that connects to TradingView Desktop via CDP, scans your watchlist, reads indicator data, and sends a formatted summary to Telegram.
-
-## Prerequisites
-
-1. **TradingView Desktop** running with remote debugging enabled:
-   ```
-   TradingView.exe --remote-debugging-port=9222
-   ```
-   Or use the launch script from the MCP project: `tradingview-mcp-jackson/scripts/launch_tv_debug_win.bat`
-
-2. Both indicators loaded and **visible** on the chart:
-   - **"MACD & RSI Smart Momentum Pro [Claude Code]"** — RSI, trend, momentum, divergence, volume, histogram, ATR Trailing Stop, EMA 200
-   - **CM_MacD_Ult_MTF** — MACD line value (required for MACD signal detection)
-
-3. **Node.js** 18+
+Headless Node.js watchlist scanner — no TradingView Desktop, no browser, no GUI. Pulls daily price history from Yahoo Finance, reimplements the MACD/RSI/ATR/ADX indicator logic locally, and sends a formatted Telegram report. Runs automatically on a schedule via GitHub Actions (Mon–Fri, 16:00 Israel time), or manually with one command.
 
 ## Setup
 
@@ -35,24 +21,32 @@ Create `telegram.config.json`:
 Edit `watchlist.txt` (one ticker per line), then run:
 
 ```bash
-node scan_watchlist.js
+node scan_headless.js
 ```
 
-## What it reads
+First run per symbol does a one-time backfill (~2-3 years of daily bars via Yahoo Finance) into `data/bars/<SYMBOL>.csv`; every run after that only fetches the bars missing since the last stored date (usually just the latest one).
 
-For each symbol, the scanner extracts:
-- **Price, ATR, EMA 200, MACD line** from the indicator data window
-- **RSI, MACD Histogram, Trend, HTF Trend, Momentum, Divergence, Volume** from the Pine table
+## Automation (GitHub Actions)
+
+`.github/workflows/scan.yml` runs the scan Monday–Friday at 16:00 Israel time and commits the updated `data/bars/*.csv` files back to the repo, so the persisted history travels with the repo across runs. See `architecture.md` for how it handles Israel's daylight-saving switch.
+
+## What it computes
+
+For each symbol, `lib/indicators.js` reproduces the full indicator suite from the original Pine script (`reference/indicatorSuite.txt`): RSI, MACD line/signal/histogram, EMA 200 trend, ATR + ATR Trailing Stop, ADX strength, RSI/MACD divergence, momentum acceleration, volume ratio, and the confluence score/signal/warning columns.
 
 ## Telegram output
 
 Stocks are grouped into sections:
-- **Potential Buys** — above ATR, within 3%
-- **Above ATR & Running** — more than 3% above ATR
-- **⚡ MACD Signals** — stocks where MACD just turned green or positive (regardless of ATR position)
+- **🎯 Potential Buys** — price just above the ATR Trailing Stop (within 3%), above EMA200, bullish trend
+- **⚡ MACD Turned Green** — histogram crossed from negative to positive within the last 5 trading days (early signal if the MACD line is still negative, continuation signal if it's already positive)
+- **⚡ MACD Turned Positive** — the MACD line itself crossed zero within the last 5 trading days (a more mature momentum confirmation)
 
-### MACD signal conditions
-- **⚡ MACD TURNED GREEN** — histogram is positive AND MACD line is still negative AND histogram < 3% of price. Means MACD crossed above Signal but both lines are still below zero (early momentum shift).
-- **⚡ MACD TURNED POSITIVE** — MACD line just crossed above zero AND MACD line < 1.5% of price (confirming it just happened, not deep into positive territory).
+See `architecture.md` for the full technical reference, including why a 5-trading-day lookback replaced the original single-bar magnitude thresholds.
 
-Each stock shows price, ATR %, RSI, trend, momentum, and a short summary of noteworthy signals (RSI extremes, mixed trends, divergences, momentum fading, high volume, EMA200 position).
+## Legacy TradingView/CDP scanner
+
+`legacy/scan_watchlist.js` is the original scanner, driving TradingView Desktop directly via Chrome DevTools Protocol. It's kept only for locally cross-checking `lib/indicators.js` against the live Pine indicator — not part of the automated pipeline. Requires TradingView Desktop running with `--remote-debugging-port=9222` and both indicators visible on a 1D chart:
+
+```bash
+node legacy/scan_watchlist.js
+```
