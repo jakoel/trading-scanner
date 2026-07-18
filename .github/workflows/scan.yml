@@ -53,5 +53,29 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/bars/
-          git diff --cached --quiet || git commit -m "Update daily bar data"
-          git push
+
+          if git diff --cached --quiet; then
+            echo "No data changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Update daily bar data"
+
+          # A push made to main while this run was in flight (e.g. a manual
+          # commit elsewhere) leaves our push non-fast-forward. Rebase onto
+          # the latest main and retry rather than failing outright — these
+          # are pure data-file commits, so conflicts are effectively
+          # impossible.
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            if git rebase origin/main && git push; then
+              echo "Pushed successfully."
+              exit 0
+            fi
+            echo "Push attempt $attempt failed (likely a race with another push to main) — retrying..."
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt * 5))
+          done
+
+          echo "Failed to push after retries."
+          exit 1
