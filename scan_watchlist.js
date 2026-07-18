@@ -29,9 +29,27 @@ const watchlist = readFileSync(join(__dirname, 'watchlist.txt'), 'utf-8')
 
 const CDP_PORT = 9222;
 const SETTLE_MS = 4000;
+const MACD_LOOKBACK_DAYS = 5;
 
 async function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Finds the most recent bar-to-bar transition from <=0 to >0 in `history`
+ * (chronological, oldest first) within the last `lookback` trading days
+ * (0 = today's bar). Returns how many days ago it happened, or null if none.
+ */
+function findRecentUpCrossover(history, metric, lookback) {
+  const n = history.length;
+  const maxK = Math.min(lookback - 1, n - 2);
+  for (let k = 0; k <= maxK; k++) {
+    const cur = metric(history[n - 1 - k]);
+    const prev = metric(history[n - 2 - k]);
+    if (cur == null || prev == null) continue;
+    if (cur > 0 && prev <= 0) return k;
+  }
+  return null;
 }
 
 async function findChartTarget() {
@@ -66,6 +84,11 @@ async function readIndicatorData(client) {
         var atrVal = null;
         var ema200 = null;
         var macdLine = null;
+        // Chronological (oldest-first) history of {macd, hist} pulled straight from
+        // CM_MacD_Ult_MTF's own plots (plot_0 = MACD, plot_4 = Histogram), which keep real
+        // per-bar history unlike the Pine table's Histogram cell. Used for true crossover
+        // detection over the last several trading days.
+        var macdHistory = null;
         var sources = model.model().dataSources();
         for (var si = 0; si < sources.length; si++) {
           var s = sources[si];
@@ -86,10 +109,18 @@ async function readIndicatorData(client) {
               if (item._title === 'EMA 200' && !isNaN(v)) ema200 = v;
               if (isMacdUlt && item._title === 'MACD' && !isNaN(v)) macdLine = v;
             }
+            if (isMacdUlt) {
+              var plotItems = s.plots && s.plots()._items;
+              if (plotItems && plotItems.length >= 2) {
+                macdHistory = plotItems.slice(-7).map(function(it) {
+                  return { macd: it.value[1], hist: it.value[5] };
+                });
+              }
+            }
           } catch(e) {}
         }
 
-        return { price: price, atr: atrVal, ema200: ema200, macdLine: macdLine };
+        return { price: price, atr: atrVal, ema200: ema200, macdLine: macdLine, macdHistory: macdHistory };
       } catch(e) { return { error: e.message }; }
     })()
   `);
@@ -139,8 +170,8 @@ function formatTelegramMessages(results) {
     return `*${r.symbol}* $${r.price} (${sign}${pct}%)\n  _${r.summary}_`;
   }
 
-  const macdGreenCount = results.filter(r => r.macdSignal === 'MACD TURNED GREEN').length;
-  const macdPositiveCount = results.filter(r => r.macdSignal === 'MACD TURNED POSITIVE').length;
+  const macdGreenCount = results.filter(r => r.macdSignals.includes('MACD TURNED GREEN')).length;
+  const macdPositiveCount = results.filter(r => r.macdSignals.includes('MACD TURNED POSITIVE')).length;
 
   const sections = [];
   if (buys.length) sections.push({ title: '🎯 Potential Buys (just above ATR)', items: buys });
@@ -163,8 +194,8 @@ function formatTelegramMessages(results) {
     }
   }
 
-  const macdGreen = results.filter(r => r.macdSignal === 'MACD TURNED GREEN');
-  const macdPositive = results.filter(r => r.macdSignal === 'MACD TURNED POSITIVE');
+  const macdGreen = results.filter(r => r.macdSignals.includes('MACD TURNED GREEN'));
+  const macdPositive = results.filter(r => r.macdSignals.includes('MACD TURNED POSITIVE'));
 
   for (const [title, items] of [['⚡ MACD Turned Green', macdGreen], ['⚡ MACD Turned Positive', macdPositive]]) {
     if (!items.length) continue;
@@ -280,34 +311,61 @@ async function main() {
 
       // Resolve MACD line value: prefer data window, fall back to table keys
       let macdLineVal = data.macdLine;
+      let macdLineSource = macdLineVal != null ? 'data.macdLine' : null;
       if (macdLineVal == null) {
         for (const key of ['MACD', 'MacD', 'MACD Line', 'MACD line', 'MACD Value']) {
           const raw = tableData?.[key];
           if (raw != null) {
             const parsed = parseFloat(String(raw).replace(/\u2212/g, '-').replace(/,/g, ''));
-            if (!isNaN(parsed)) { macdLineVal = parsed; break; }
+            if (!isNaN(parsed)) { macdLineVal = parsed; macdLineSource = `tableData['${key}']`; break; }
           }
         }
       }
 
       const macdHistNum = parseFloat(String(macdHist).replace(/\u2212/g, '-').replace(/,/g, ''));
-      let macdSignal = null;
-      if (!isNaN(macdHistNum) && macdHistNum > 0 && macdLineVal != null) {
-        if (macdLineVal < 0 && macdHistNum < price * 0.03) {
-          macdSignal = 'MACD TURNED GREEN';
-        } else if (macdLineVal > 0 && macdLineVal < price * 0.012) {
-          macdSignal = 'MACD TURNED POSITIVE';
+
+      // Both signals are real crossovers detected from CM_MacD_Ult_MTF's own historical plots
+      // (MACD line + its Histogram, same calculation, so their signs are consistent with each
+      // other) \u2014 no magnitude thresholds, no false "state vs event" positives. A signal stays
+      // active for MACD_LOOKBACK_DAYS trading days after the actual crossover, so it's still
+      // surfaced while the move is recent/early, then drops off on its own.
+      //
+      // TURNED GREEN: the histogram itself crossed from negative to positive, independent of
+      // where the MACD line sits \u2014 an early heads-up if the line is still negative, or a
+      // continuation/re-acceleration signal if the line is already positive.
+      // TURNED POSITIVE: the MACD line crossed zero \u2014 a more mature momentum confirmation.
+      // The two are independent and can both fire for the same symbol (e.g. histogram crossed
+      // green a few days before the line itself crossed positive).
+      const macdHistory = data.macdHistory;
+      let positiveCrossDaysAgo = null;
+      let greenCrossDaysAgo = null;
+      let todayHistVal = null;
+      const macdSignals = [];
+      if (macdLineVal != null && macdHistory && macdHistory.length >= 2) {
+        todayHistVal = macdHistory[macdHistory.length - 1].hist;
+        positiveCrossDaysAgo = findRecentUpCrossover(macdHistory, b => b.macd, MACD_LOOKBACK_DAYS);
+        greenCrossDaysAgo = findRecentUpCrossover(macdHistory, b => b.hist, MACD_LOOKBACK_DAYS);
+
+        if (todayHistVal != null && todayHistVal > 0 && greenCrossDaysAgo !== null) {
+          macdSignals.push('MACD TURNED GREEN');
+        }
+        if (macdLineVal > 0 && positiveCrossDaysAgo !== null) {
+          macdSignals.push('MACD TURNED POSITIVE');
         }
       }
 
       const summary = generateSummary({ price, atr, ema200, rsi, macdHist, trend, htfTrend, momentum, divergence, volume });
 
-      const entry = { symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignal, trend, htfTrend, momentum, divergence, volume, summary };
+      const entry = { symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, trend, htfTrend, momentum, divergence, volume, summary };
       results.push(entry);
 
       const pct = ((price - atr) / atr * 100).toFixed(1);
       const tag = price > atr ? 'ABOVE' : 'BELOW';
       console.log(`  ${symbol.padEnd(6)} $${price.toFixed(2).padStart(8)} | ATR $${atr.toFixed(2).padStart(8)} | ${pct}% ${tag} | RSI ${rsi} | ${trend} | ${summary}`);
+      console.log(`    [MACD DEBUG] macdLineVal=${macdLineVal} (source=${macdLineSource}) macdHistRaw="${macdHist}" macdHistNum=${macdHistNum} todayHistVal(fromCM_MacD_Ult_MTF)=${todayHistVal} price=${price}`);
+      console.log(`    [MACD DEBUG] macdHistory(oldest→newest)=${JSON.stringify(macdHistory)}`);
+      console.log(`    [MACD DEBUG] positiveCrossDaysAgo=${positiveCrossDaysAgo} greenCrossDaysAgo=${greenCrossDaysAgo} lookback=${MACD_LOOKBACK_DAYS}d | macdSignals=${macdSignals.length ? macdSignals.join(', ') : 'none'}`);
+      console.log(`    [MACD DEBUG] data.macdLine=${data.macdLine} | tableData=${JSON.stringify(tableData)}`);
 
     } catch (e) {
       console.log(`  ${symbol.padEnd(6)} — error: ${e.message}`);
