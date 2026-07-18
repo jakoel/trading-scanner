@@ -1,0 +1,57 @@
+name: Watchlist Scan
+
+# Israel alternates between UTC+2 (IST, winter) and UTC+3 (IDT, summer), so a
+# single fixed-UTC cron would drift an hour off 16:00 Israel time twice a year.
+# Both possible UTC times are scheduled below; the "Check target time" step
+# reads the real Israel wall-clock time (tzdata handles DST automatically) and
+# only lets the matching run continue.
+on:
+  schedule:
+    - cron: '0 13 * * 1-5'  # 16:00 Israel time during IDT (UTC+3, summer)
+    - cron: '0 14 * * 1-5'  # 16:00 Israel time during IST (UTC+2, winter)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check target time
+        id: check
+        run: |
+          HOUR=$(TZ=Asia/Jerusalem date +%H)
+          echo "Current Israel hour: $HOUR"
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$HOUR" = "16" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.check.outputs.should_run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        if: steps.check.outputs.should_run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        if: steps.check.outputs.should_run == 'true'
+        run: npm ci
+
+      - name: Run headless scan
+        if: steps.check.outputs.should_run == 'true'
+        run: npm run scan:headless
+
+      - name: Commit updated bar data
+        if: steps.check.outputs.should_run == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/bars/
+          git diff --cached --quiet || git commit -m "Update daily bar data"
+          git push

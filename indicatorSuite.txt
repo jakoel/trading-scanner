@@ -1,0 +1,761 @@
+//@version=6
+indicator("MACD & RSI Smart Momentum Pro [Swing Edition]", shorttitle="MACD RSI Pro Swing", overlay=true, max_bars_back=500)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INPUT PARAMETERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// MACD Settings
+grpMACD = "MACD Settings"
+fastLength = input.int(12, "Fast Length", minval=1, maxval=100, group=grpMACD)
+slowLength = input.int(26, "Slow Length", minval=1, maxval=100, group=grpMACD)
+signalSmoothing = input.int(9, "Signal Length", minval=1, maxval=100, group=grpMACD)
+
+// RSI Settings
+grpRSI = "RSI Settings"
+rsiLength = input.int(14, "RSI Length", minval=1, maxval=100, group=grpRSI)
+rsiOverbought = input.int(70, "Overbought Level", minval=50, maxval=100, group=grpRSI)
+rsiOversold = input.int(30, "Oversold Level", minval=0, maxval=50, group=grpRSI)
+
+// Trend Filter Settings (Option 2)
+grpTrend = "Trend Filter (EMA)"
+useTrendFilter = input.bool(true, "Enable Trend Filter", group=grpTrend)
+emaLength = input.int(200, "EMA Length", minval=1, maxval=500, group=grpTrend)
+useHTF = input.bool(true, "Use Higher Timeframe Confirmation", group=grpTrend)
+htfTimeframe = input.timeframe("D", "Higher Timeframe", group=grpTrend)
+useConfirmedHTFBar = input.bool(false, "Use Confirmed HTF Bar", tooltip="Reads the last CLOSED higher-timeframe bar instead of the live/forming one. Removes intrabar HTF repaint at the cost of a one-HTF-bar delay.", group=grpTrend)
+
+// ADX Filter (Choppiness)
+grpADX = "ADX Filter (Choppiness)"
+useADXFilter = input.bool(true, "Filter Low ADX (Chop)", group=grpADX)
+adxLength = input.int(14, "ADX Length", minval=1, maxval=50, group=grpADX)
+adxThreshold = input.int(20, "Min ADX Strength", minval=1, maxval=50, group=grpADX)
+
+// Divergence Settings (Option 3)
+grpDiv = "Divergence Detection"
+useDivergence = input.bool(true, "Enable Divergence Detection", group=grpDiv)
+divLookback = input.int(14, "Divergence Lookback", minval=5, maxval=50, group=grpDiv)
+
+// Momentum Acceleration Settings
+grpMomentum = "Momentum Acceleration"
+useMomentumAccel = input.bool(true, "Enable Momentum Acceleration", group=grpMomentum)
+accelLookback = input.int(5, "Acceleration Lookback", minval=2, maxval=20, group=grpMomentum)
+
+// Volume Confirmation Settings
+grpVolume = "Volume Confirmation"
+useVolumeFilter = input.bool(true, "Enable Volume Filter", group=grpVolume)
+volumeMALength = input.int(20, "Volume MA Length", minval=5, maxval=200, group=grpVolume)
+volumeSurgeMultiplier = input.float(1.5, "Volume Surge Multiplier", minval=1.0, maxval=5.0, step=0.1, group=grpVolume)
+
+// Swing Exit Strategy (ATR)
+grpExit = "Swing Exit Strategy (ATR)"
+useATRTrailing = input.bool(true, "Show ATR Trailing Stop", group=grpExit)
+atrLength = input.int(10, "ATR Length", group=grpExit)
+atrMultiplier = input.float(3.0, "ATR Multiplier", step=0.1, group=grpExit)
+
+// Signal Quality & Filtering
+grpQuality = "Signal Quality & Filtering"
+useSignalFiltering = input.bool(true, "Enable Signal Filtering", tooltip="Reduces noise by applying stricter requirements", group=grpQuality)
+minHistogramStrengthATR = input.float(0.05, "Min MACD Histogram Strength (x ATR)", minval=0.0, maxval=1.0, step=0.01, tooltip="Minimum histogram absolute value, expressed as a multiple of ATR, to generate signals. Scales with instrument/timeframe instead of a fixed price-unit value.", group=grpQuality)
+confirmationBars = input.int(2, "Confirmation Bars", minval=1, maxval=5, tooltip="Number of bars signal must persist before triggering", group=grpQuality)
+signalCooldown = input.int(5, "Signal Cooldown (bars)", minval=0, maxval=20, tooltip="Minimum bars between same-type signals (0 = disabled)", group=grpQuality)
+rsiStrengthThreshold = input.int(10, "RSI Strength Threshold", minval=5, maxval=30, tooltip="RSI must be this far from 50 (e.g., 10 means >60 or <40)", group=grpQuality)
+macdCrossLookback = input.int(3, "MACD Cross Lookback", minval=1, maxval=10, tooltip="Bars to look back for MACD crossover", group=grpQuality)
+minConfluenceScore = input.int(4, "Min Confluence Score (Standard)", minval=1, maxval=8, step=1, tooltip="Score ≥ this = Standard signal. Score ≥ this+2 = Confirmed. Max score is 8 (7 base + 1 divergence bonus).", group=grpQuality)
+
+// Color Constants
+const color confirmedBuyColor    = #00E676
+const color standardBuyColor     = #81C784
+const color pullbackWarnColor    = #FFB74D
+const color counterTrendBullColor = #4FC3F7
+const color confirmedSellColor   = #F44336
+const color standardSellColor    = #E57373
+const color rallyWarnColor       = #FF8A65
+const color counterTrendBearColor = #BA68C8
+const color neutralColor         = #9E9E9E
+
+// Display Settings
+grpDisplay = "Display Settings"
+showEMA = input.bool(true, "Show EMA 200", group=grpDisplay)
+showDivergenceSignals = input.bool(true, "Show Divergence Signals", group=grpDisplay)
+showMomentumSignals = input.bool(true, "Show Momentum Signals", group=grpDisplay)
+showRSIExtremes = input.bool(true, "Show RSI Extreme Warnings", group=grpDisplay)
+showMomentumBG = input.bool(false, "Show Momentum Background", group=grpDisplay)
+showInfoTable = input.bool(true, "Show Info Table", group=grpDisplay)
+showLegend = input.bool(true, "Show Chart Indicators Legend", group=grpDisplay)
+tablePosition = input.string("top_right", "Table Position", options=["top_right", "top_left", "bottom_right", "bottom_left"], group=grpDisplay)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CORE CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// MACD components
+fastMA = ta.ema(close, fastLength)
+slowMA = ta.ema(close, slowLength)
+macdLine = fastMA - slowMA
+signalLine = ta.ema(macdLine, signalSmoothing)
+histogram = macdLine - signalLine
+
+// RSI calculation
+rsiValue = ta.rsi(close, rsiLength)
+
+// EMA 200 for trend filter
+ema200 = ta.ema(close, emaLength)
+
+// ATR (used for the histogram-strength gate and the trailing stop)
+atr = ta.atr(atrLength)
+
+// ADX Calculation for Chop Filter
+[_diPlus, _diMinus, adxValue] = ta.dmi(adxLength, adxLength)
+trendIsStrong = useADXFilter ? adxValue >= adxThreshold : true
+
+// Volume analysis
+volumeMA = ta.sma(volume, volumeMALength)
+volumeRatio = volume / volumeMA
+aboveAverageVolume = volumeRatio >= 1.0
+volumeSurge = volumeRatio >= volumeSurgeMultiplier
+lowVolume = volumeRatio < 0.7
+
+
+// MACD Crossover detection
+detectMACDCross(bullish, lookback) =>
+    crossDetected = false
+    if bullish
+        // Look for bullish cross (MACD crosses above signal line)
+        for i = 0 to lookback - 1
+            if ta.crossover(macdLine, signalLine)[i]
+                crossDetected := true
+                break
+    else
+        // Look for bearish cross (MACD crosses below signal line)
+        for i = 0 to lookback - 1
+            if ta.crossunder(macdLine, signalLine)[i]
+                crossDetected := true
+                break
+    crossDetected
+
+bullishMACDCross = detectMACDCross(true, macdCrossLookback)
+bearishMACDCross = detectMACDCross(false, macdCrossLookback)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OPTION 2: TREND FILTER & MULTI-TIMEFRAME
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Current timeframe trend
+priceAboveEMA = close > ema200
+priceBelowEMA = close < ema200
+
+// Higher timeframe trend
+htfEMA = request.security(syminfo.tickerid, htfTimeframe, useConfirmedHTFBar ? ta.ema(close, emaLength)[1] : ta.ema(close, emaLength), lookahead=barmerge.lookahead_off)
+htfClose = request.security(syminfo.tickerid, htfTimeframe, useConfirmedHTFBar ? close[1] : close, lookahead=barmerge.lookahead_off)
+htfTrendBullish = htfClose > htfEMA
+htfTrendBearish = htfClose < htfEMA
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OPTION 3: DIVERGENCE DETECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Pivot detection for divergence
+pivotHighPrice = ta.pivothigh(high, divLookback, divLookback)
+pivotLowPrice = ta.pivotlow(low, divLookback, divLookback)
+pivotHighRSI = ta.pivothigh(rsiValue, divLookback, divLookback)
+pivotLowRSI = ta.pivotlow(rsiValue, divLookback, divLookback)
+
+// Store previous pivot values
+var float prevPivotHighPrice = na
+var float prevPivotLowPrice = na
+var float prevPivotHighRSI = na
+var float prevPivotLowRSI = na
+
+// Divergence flags
+var bool bearishDivDetected = false
+var bool bullishDivDetected = false
+var bool macdBearishDivDetected = false
+var bool macdBullishDivDetected = false
+
+// Reset flags each bar
+bearishDivDetected := false
+bullishDivDetected := false
+macdBearishDivDetected := false
+macdBullishDivDetected := false
+
+// Check for new pivot high and bearish divergence
+if not na(pivotHighPrice) and useDivergence
+    if not na(prevPivotHighPrice) and not na(prevPivotHighRSI)
+        if pivotHighPrice > prevPivotHighPrice and pivotHighRSI < prevPivotHighRSI
+            bearishDivDetected := true
+    prevPivotHighPrice := pivotHighPrice
+    prevPivotHighRSI := pivotHighRSI
+
+// Check for new pivot low and bullish divergence
+if not na(pivotLowPrice) and useDivergence
+    if not na(prevPivotLowPrice) and not na(prevPivotLowRSI)
+        if pivotLowPrice < prevPivotLowPrice and pivotLowRSI > prevPivotLowRSI
+            bullishDivDetected := true
+    prevPivotLowPrice := pivotLowPrice
+    prevPivotLowRSI := pivotLowRSI
+
+// MACD Histogram Divergence
+histPivotHigh = ta.pivothigh(histogram, divLookback, divLookback)
+histPivotLow = ta.pivotlow(histogram, divLookback, divLookback)
+
+var float prevHistPivotHigh = na
+var float prevHistPivotLow = na
+var float prevHistPivotHighPrice = na
+var float prevHistPivotLowPrice = na
+
+if not na(histPivotHigh) and useDivergence
+    currentPivotHighPrice = high[divLookback]
+    if not na(prevHistPivotHigh) and not na(prevHistPivotHighPrice)
+        if currentPivotHighPrice > prevHistPivotHighPrice and histPivotHigh < prevHistPivotHigh
+            macdBearishDivDetected := true
+    prevHistPivotHigh := histPivotHigh
+    prevHistPivotHighPrice := currentPivotHighPrice
+
+if not na(histPivotLow) and useDivergence
+    currentPivotLowPrice = low[divLookback]
+    if not na(prevHistPivotLow) and not na(prevHistPivotLowPrice)
+        if currentPivotLowPrice < prevHistPivotLowPrice and histPivotLow > prevHistPivotLow
+            macdBullishDivDetected := true
+    prevHistPivotLow := histPivotLow
+    prevHistPivotLowPrice := currentPivotLowPrice
+
+// Combined divergence signals
+anyBearishDivergence = bearishDivDetected or macdBearishDivDetected
+anyBullishDivergence = bullishDivDetected or macdBullishDivDetected
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOMENTUM ACCELERATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Histogram momentum analysis
+histExpanding = math.abs(histogram) > math.abs(histogram[1])
+
+// Multi-bar acceleration check
+calcAccelerating() =>
+    result = true
+    for i = 1 to accelLookback - 1
+        if math.abs(histogram[i-1]) <= math.abs(histogram[i])
+            result := false
+            break
+    result
+
+calcDecelerating() =>
+    result = true
+    for i = 1 to accelLookback - 1
+        if math.abs(histogram[i-1]) >= math.abs(histogram[i])
+            result := false
+            break
+    result
+
+histAccelerating = calcAccelerating()
+histDecelerating = calcDecelerating()
+
+// Momentum state
+momentumStrengthening = useMomentumAccel ? histAccelerating : false
+momentumWeakening = useMomentumAccel ? histDecelerating : false
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BASE CONDITIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// RSI thresholds
+float rsiUpperThreshold = useSignalFiltering ? 50 + rsiStrengthThreshold : 50
+float rsiLowerThreshold = useSignalFiltering ? 50 - rsiStrengthThreshold : 50
+
+// MACD histogram strength gate (relative to ATR so it scales across instruments/timeframes)
+bool histogramStrong = useSignalFiltering ? math.abs(histogram) >= (minHistogramStrengthATR * atr) : true
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONFLUENCE SCORE
+// Each condition contributes 1 point (max 7 base + 1 divergence bonus = 8)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Bullish score
+int bullScore = 0
+bullScore += bullishMACDCross ? 1 : 0
+bullScore += rsiValue > rsiUpperThreshold ? 1 : 0
+bullScore += useVolumeFilter ? (volumeSurge ? 2 : aboveAverageVolume ? 1 : 0) : 1
+bullScore += priceAboveEMA ? 1 : 0
+bullScore += useHTF and htfTrendBullish ? 1 : 0
+bullScore += trendIsStrong ? 1 : 0
+bullScore += anyBullishDivergence ? 1 : 0  // divergence bonus
+
+// Bearish score
+int bearScore = 0
+bearScore += bearishMACDCross ? 1 : 0
+bearScore += rsiValue < rsiLowerThreshold ? 1 : 0
+bearScore += useVolumeFilter ? (volumeSurge ? 2 : aboveAverageVolume ? 1 : 0) : 1
+bearScore += priceBelowEMA ? 1 : 0
+bearScore += useHTF and htfTrendBearish ? 1 : 0
+bearScore += trendIsStrong ? 1 : 0
+bearScore += anyBearishDivergence ? 1 : 0  // divergence bonus
+
+// Cap at 8: volume surge can push raw score to 9 — enforce the documented maximum
+bullScore := math.min(bullScore, 8)
+bearScore := math.min(bearScore, 8)
+
+// Score thresholds
+int confirmedThreshold = math.min(minConfluenceScore + 2, 8)
+
+// Score-based signals (histogram direction gates the side; score gates the quality)
+bool confirmedBuy  = histogram > 0 and histogramStrong and bullScore >= confirmedThreshold
+bool standardBuy   = histogram > 0 and histogramStrong and bullScore >= minConfluenceScore and bullScore < confirmedThreshold
+bool confirmedSell = histogram < 0 and histogramStrong and bearScore >= confirmedThreshold
+bool standardSell  = histogram < 0 and histogramStrong and bearScore >= minConfluenceScore and bearScore < confirmedThreshold
+
+// Counter-trend: strong score but opposite EMA side (informational)
+bool counterTrendRally   = histogram > 0 and histogramStrong and bullScore >= minConfluenceScore and priceBelowEMA and useTrendFilter
+bool counterTrendPullback = histogram < 0 and histogramStrong and bearScore >= minConfluenceScore and priceAboveEMA and useTrendFilter
+
+// Warnings: momentum weakening while trending
+bool pullbackWarning = momentumWeakening and histogram < 0 and priceAboveEMA and useTrendFilter
+bool rallyWarning    = momentumWeakening and histogram > 0 and priceBelowEMA and useTrendFilter
+
+// Low volume flag for display
+bool lowVolumeWarning = useVolumeFilter and lowVolume and (histogram > 0 or histogram < 0)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SIGNAL CONFIRMATION & COOLDOWN
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Multi-bar confirmation - signal must persist for N bars
+checkConfirmation(condition, bars) =>
+    if not useSignalFiltering or bars <= 1
+        condition
+    else
+        result = true
+        for i = 0 to bars - 1
+            if not condition[i]
+                result := false
+                break
+        result
+
+// Multi-bar validation on score-based signals
+confirmedBuyConfirmed  = checkConfirmation(confirmedBuy,  confirmationBars)
+confirmedSellConfirmed = checkConfirmation(confirmedSell, confirmationBars)
+standardBuyConfirmed   = checkConfirmation(standardBuy,   confirmationBars)
+standardSellConfirmed  = checkConfirmation(standardSell,  confirmationBars)
+
+// Cooldown tracking
+var int lastBuySignalBar = -999
+var int lastSellSignalBar = -999
+
+// Apply cooldown filter
+bool buySignalReady = not useSignalFiltering or signalCooldown == 0 or (bar_index - lastBuySignalBar) >= signalCooldown
+bool sellSignalReady = not useSignalFiltering or signalCooldown == 0 or (bar_index - lastSellSignalBar) >= signalCooldown
+
+// Final filtered signals
+filteredConfirmedBuy = confirmedBuyConfirmed and buySignalReady
+filteredConfirmedSell = confirmedSellConfirmed and sellSignalReady
+filteredStandardBuy = standardBuyConfirmed and buySignalReady
+filteredStandardSell = standardSellConfirmed and sellSignalReady
+
+// Update last signal bars
+if filteredConfirmedBuy or filteredStandardBuy
+    lastBuySignalBar := bar_index
+if filteredConfirmedSell or filteredStandardSell
+    lastSellSignalBar := bar_index
+
+// Use filtered signals if filtering is enabled, otherwise use original
+finalConfirmedBuy = useSignalFiltering ? filteredConfirmedBuy : confirmedBuy
+finalConfirmedSell = useSignalFiltering ? filteredConfirmedSell : confirmedSell
+finalStandardBuy = useSignalFiltering ? filteredStandardBuy : standardBuy
+finalStandardSell = useSignalFiltering ? filteredStandardSell : standardSell
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATR TRAILING STOP & RISK MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ATR Trailing Stop Calculation
+var float trailStop = na
+var bool trailBullish = false
+if useATRTrailing
+    if na(trailStop[1])
+        // No stop yet: only a fresh signal can seed it
+        if finalConfirmedBuy or finalStandardBuy
+            trailStop := low - (atr * atrMultiplier)
+            trailBullish := true
+        else if finalConfirmedSell or finalStandardSell
+            trailStop := high + (atr * atrMultiplier)
+            trailBullish := false
+    else
+        // Trail in the current direction, flipping if price closes through the stop
+        // so this behaves as a live exit even when no new entry signal fires
+        if trailBullish
+            trailStop := math.max(trailStop[1], close - (atr * atrMultiplier))
+            if close < trailStop
+                trailBullish := false
+                trailStop := high + (atr * atrMultiplier)
+        else
+            trailStop := math.min(trailStop[1], close + (atr * atrMultiplier))
+            if close > trailStop
+                trailBullish := true
+                trailStop := low - (atr * atrMultiplier)
+
+        // A fresh opposing signal overrides the flip logic immediately
+        if finalConfirmedBuy or finalStandardBuy
+            trailStop := low - (atr * atrMultiplier)
+            trailBullish := true
+        else if finalConfirmedSell or finalStandardSell
+            trailStop := high + (atr * atrMultiplier)
+            trailBullish := false
+
+// Plot ATR Trailing Stop
+plot(useATRTrailing ? trailStop : na, "ATR Trailing Stop", style=plot.style_linebr, color=close > trailStop ? color.green : color.red, linewidth=2)
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CANDLE COLORING
+// ═══════════════════════════════════════════════════════════════════════════
+
+color candleColor = neutralColor
+
+if finalConfirmedBuy
+    candleColor := confirmedBuyColor
+else if finalStandardBuy
+    candleColor := standardBuyColor
+else if counterTrendRally
+    candleColor := counterTrendBullColor
+else if pullbackWarning
+    candleColor := pullbackWarnColor
+else if finalConfirmedSell
+    candleColor := confirmedSellColor
+else if finalStandardSell
+    candleColor := standardSellColor
+else if counterTrendPullback
+    candleColor := counterTrendBearColor
+else if rallyWarning
+    candleColor := rallyWarnColor
+
+// Apply bar color
+barcolor(candleColor)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PLOTTING - EMA
+// ═══════════════════════════════════════════════════════════════════════════
+
+plot(showEMA ? ema200 : na, "EMA 200", color=color.new(color.orange, 0), linewidth=2)
+plot(showEMA and useHTF ? htfEMA : na, "HTF EMA", color=color.new(color.purple, 50), linewidth=1, style=plot.style_circles)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DIVERGENCE SIGNALS - Using plotshape with offset for proper attachment
+// ═══════════════════════════════════════════════════════════════════════════
+
+// RSI Bullish Divergence
+plotshape(showDivergenceSignals and bullishDivDetected, 
+     title="RSI Bullish Divergence", 
+     text="Bull\nDiv", 
+     textcolor=color.white,
+     location=location.belowbar, 
+     style=shape.labelup, 
+     color=color.new(color.green, 20), 
+     size=size.small,
+     offset=-divLookback)
+
+// RSI Bearish Divergence
+plotshape(showDivergenceSignals and bearishDivDetected, 
+     title="RSI Bearish Divergence", 
+     text="Bear\nDiv", 
+     textcolor=color.white,
+     location=location.abovebar, 
+     style=shape.labeldown, 
+     color=color.new(color.red, 20), 
+     size=size.small,
+     offset=-divLookback)
+
+// MACD Bullish Divergence
+plotshape(showDivergenceSignals and macdBullishDivDetected and not bullishDivDetected, 
+     title="MACD Bullish Divergence", 
+     text="M", 
+     textcolor=color.white,
+     location=location.belowbar, 
+     style=shape.labelup, 
+     color=color.new(color.teal, 20), 
+     size=size.tiny,
+     offset=-divLookback)
+
+// MACD Bearish Divergence
+plotshape(showDivergenceSignals and macdBearishDivDetected and not bearishDivDetected, 
+     title="MACD Bearish Divergence", 
+     text="M", 
+     textcolor=color.white,
+     location=location.abovebar, 
+     style=shape.labeldown, 
+     color=color.new(color.maroon, 20), 
+     size=size.tiny,
+     offset=-divLookback)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOMENTUM SIGNALS - Using plotshape for proper attachment
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Bullish momentum fading
+plotshape(showMomentumSignals and momentumWeakening and histogram > 0 and histogram[accelLookback] > 0, 
+     title="Bullish Momentum Fading", 
+     location=location.abovebar, 
+     style=shape.triangledown, 
+     color=color.new(color.orange, 30), 
+     size=size.tiny)
+
+// Bearish momentum fading
+plotshape(showMomentumSignals and momentumWeakening and histogram < 0 and histogram[accelLookback] < 0, 
+     title="Bearish Momentum Fading", 
+     location=location.belowbar, 
+     style=shape.triangleup, 
+     color=color.new(color.orange, 30), 
+     size=size.tiny)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RSI EXTREME WARNINGS - Using plotshape for proper attachment
+// ═══════════════════════════════════════════════════════════════════════════
+
+plotshape(showRSIExtremes and rsiValue >= rsiOverbought and histogram > 0 and bullScore >= minConfluenceScore,
+     title="Overbought Warning",
+     location=location.abovebar,
+     style=shape.xcross,
+     color=color.new(color.red, 30),
+     size=size.tiny)
+
+plotshape(showRSIExtremes and rsiValue <= rsiOversold and histogram < 0 and bearScore >= minConfluenceScore,
+     title="Oversold Warning",
+     location=location.belowbar,
+     style=shape.xcross,
+     color=color.new(color.green, 30),
+     size=size.tiny)
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// MOMENTUM BACKGROUND
+// ═══════════════════════════════════════════════════════════════════════════
+
+bgcolor(showMomentumBG and momentumStrengthening and histogram > 0 ? color.new(color.green, 90) : na, title="Bullish Momentum Strengthening")
+bgcolor(showMomentumBG and momentumStrengthening and histogram < 0 ? color.new(color.red, 90) : na, title="Bearish Momentum Strengthening")
+bgcolor(showMomentumBG and momentumWeakening ? color.new(color.yellow, 95) : na, title="Momentum Weakening")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INFO TABLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+getTablePosition() =>
+    switch tablePosition
+        "top_left" => position.top_left
+        "bottom_right" => position.bottom_right
+        "bottom_left" => position.bottom_left
+        => position.top_right
+
+var table infoTable = table.new(getTablePosition(), 2, 12, bgcolor=color.new(#1E1E1E, 10), border_width=1)
+
+if showInfoTable and barstate.islast
+    // Header
+    table.cell(infoTable, 0, 0, "Indicator", text_color=color.white, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 0, "Value", text_color=color.white, text_size=size.small, text_halign=text.align_right)
+    
+    // RSI
+    color rsiColor = rsiValue >= rsiOverbought ? color.red : rsiValue <= rsiOversold ? color.green : color.white
+    table.cell(infoTable, 0, 1, "RSI", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 1, str.tostring(rsiValue, "#.##"), text_color=rsiColor, text_size=size.small, text_halign=text.align_right)
+    
+    // ADX
+    color adxColor = adxValue >= adxThreshold ? color.green : color.red
+    table.cell(infoTable, 0, 2, "ADX (Strength)", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 2, str.tostring(adxValue, "#.##"), text_color=adxColor, text_size=size.small, text_halign=text.align_right)
+
+    // MACD Histogram
+    color histColor = histogram > 0 ? (histExpanding ? confirmedBuyColor : standardBuyColor) : (histExpanding ? confirmedSellColor : standardSellColor)
+    table.cell(infoTable, 0, 3, "Histogram", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 3, str.tostring(histogram, "#.####"), text_color=histColor, text_size=size.small, text_halign=text.align_right)
+    
+    // Trend (EMA)
+    string trendText = priceAboveEMA ? "BULLISH" : "BEARISH"
+    color trendColor = priceAboveEMA ? confirmedBuyColor : confirmedSellColor
+    table.cell(infoTable, 0, 4, "Trend (EMA)", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 4, trendText, text_color=trendColor, text_size=size.small, text_halign=text.align_right)
+    
+    // HTF Trend
+    string htfText = htfTrendBullish ? "BULLISH" : "BEARISH"
+    color htfColor = htfTrendBullish ? confirmedBuyColor : confirmedSellColor
+    table.cell(infoTable, 0, 5, "HTF Trend", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 5, htfText, text_color=htfColor, text_size=size.small, text_halign=text.align_right)
+    
+    // Momentum
+    string momentumText = momentumStrengthening ? "ACCELERATING" : momentumWeakening ? "DECELERATING" : "STABLE"
+    color momentumColor = momentumStrengthening ? confirmedBuyColor : momentumWeakening ? color.orange : color.gray
+    table.cell(infoTable, 0, 6, "Momentum", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 6, momentumText, text_color=momentumColor, text_size=size.small, text_halign=text.align_right)
+
+    // Volume
+    string volumeText = volumeSurge ? "SURGE" : aboveAverageVolume ? "ABOVE AVG" : lowVolume ? "LOW" : "AVERAGE"
+    string volumeRatioStr = str.tostring(volumeRatio, "#.##") + "x"
+    color volumeColor = volumeSurge ? confirmedBuyColor : aboveAverageVolume ? color.white : lowVolume ? color.red : color.gray
+    table.cell(infoTable, 0, 7, "Volume", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 7, volumeText + " (" + volumeRatioStr + ")", text_color=volumeColor, text_size=size.small, text_halign=text.align_right)
+
+    // Divergence
+    string divText = anyBearishDivergence ? "BEARISH DIV" : anyBullishDivergence ? "BULLISH DIV" : "NONE"
+    color divColor = anyBearishDivergence ? color.red : anyBullishDivergence ? color.green : color.gray
+    table.cell(infoTable, 0, 8, "Divergence", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 8, divText, text_color=divColor, text_size=size.small, text_halign=text.align_right)
+
+    // Confluence Score (show active side)
+    int activeScore = histogram >= 0 ? bullScore : bearScore
+    int maxScore = 8
+    color scoreColor = activeScore >= confirmedThreshold ? confirmedBuyColor : activeScore >= minConfluenceScore ? standardBuyColor : color.gray
+    if histogram < 0
+        scoreColor := activeScore >= confirmedThreshold ? confirmedSellColor : activeScore >= minConfluenceScore ? standardSellColor : color.gray
+    table.cell(infoTable, 0, 9, "Score (/8)", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 9, str.tostring(activeScore) + " / " + str.tostring(maxScore), text_color=scoreColor, text_size=size.small, text_halign=text.align_right)
+
+    // Signal
+    string signalText = "NEUTRAL"
+    color signalColor = neutralColor
+    if finalConfirmedBuy
+        signalText := "CONFIRMED BUY"
+        signalColor := confirmedBuyColor
+    else if finalConfirmedSell
+        signalText := "CONFIRMED SELL"
+        signalColor := confirmedSellColor
+    else if counterTrendRally
+        signalText := "COUNTER RALLY"
+        signalColor := counterTrendBullColor
+    else if counterTrendPullback
+        signalText := "COUNTER PULL"
+        signalColor := counterTrendBearColor
+    else if pullbackWarning
+        signalText := "PULLBACK WARN"
+        signalColor := pullbackWarnColor
+    else if rallyWarning
+        signalText := "RALLY WARN"
+        signalColor := rallyWarnColor
+    else if finalStandardBuy
+        signalText := "STANDARD BUY"
+        signalColor := standardBuyColor
+    else if finalStandardSell
+        signalText := "STANDARD SELL"
+        signalColor := standardSellColor
+
+    table.cell(infoTable, 0, 10, "Signal", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 10, signalText, text_color=signalColor, text_size=size.small, text_halign=text.align_right)
+
+    // Early Warning (score-aware, no stale variable references)
+    string warningText = "NONE"
+    color warningColor = color.gray
+    if anyBearishDivergence and histogram > 0 and bullScore >= minConfluenceScore
+        warningText := "⚠ TOP FORMING"
+        warningColor := color.red
+    else if anyBullishDivergence and histogram < 0 and bearScore >= minConfluenceScore
+        warningText := "⚠ BOTTOM FORMING"
+        warningColor := color.green
+    else if momentumWeakening and histogram > 0
+        warningText := "↓ BULL FADING"
+        warningColor := color.orange
+    else if momentumWeakening and histogram < 0
+        warningText := "↑ BEAR FADING"
+        warningColor := color.orange
+    else if rsiValue >= rsiOverbought and histogram > 0 and bullScore >= minConfluenceScore
+        warningText := "OVERBOUGHT"
+        warningColor := color.red
+    else if rsiValue <= rsiOversold and histogram < 0 and bearScore >= minConfluenceScore
+        warningText := "OVERSOLD"
+        warningColor := color.green
+    else if lowVolumeWarning
+        warningText := "LOW VOLUME"
+        warningColor := color.gray
+
+    table.cell(infoTable, 0, 11, "Warning", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.cell(infoTable, 1, 11, warningText, text_color=warningColor, text_size=size.small, text_halign=text.align_right)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CHART INDICATORS LEGEND TABLE
+// ═══════════════════════════════════════════════════════════════════════════
+
+var table legendTable = table.new(position.bottom_right, 2, 10, bgcolor=color.new(#1E1E1E, 10), border_width=1)
+
+if showLegend and barstate.islast
+    // Header
+    table.cell(legendTable, 0, 0, "Chart Indicators", text_color=color.white, text_size=size.small, text_halign=text.align_center, bgcolor=color.new(#2E2E2E, 10))
+    table.cell(legendTable, 1, 0, "Meaning", text_color=color.white, text_size=size.small, text_halign=text.align_center, bgcolor=color.new(#2E2E2E, 10))
+
+    // Divergence Signals
+    table.cell(legendTable, 0, 1, "Bull Div ▲", text_color=color.new(color.green, 20), text_size=size.small, text_halign=text.align_left)
+    table.cell(legendTable, 1, 1, "RSI Bullish Divergence", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+
+    table.cell(legendTable, 0, 2, "Bear Div ▼", text_color=color.new(color.red, 20), text_size=size.small, text_halign=text.align_left)
+    table.cell(legendTable, 1, 2, "RSI Bearish Divergence", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+
+    table.cell(legendTable, 0, 3, "M ▲", text_color=color.new(color.teal, 20), text_size=size.small, text_halign=text.align_left)
+    table.cell(legendTable, 1, 3, "MACD Bullish Divergence", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+
+    table.cell(legendTable, 0, 4, "M ▼", text_color=color.new(color.maroon, 20), text_size=size.small, text_halign=text.align_left)
+    table.cell(legendTable, 1, 4, "MACD Bearish Divergence", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+
+    // Momentum Signals
+    table.cell(legendTable, 0, 5, "▼ Orange", text_color=color.new(color.orange, 30), text_size=size.small, text_halign=text.align_left)
+    table.cell(legendTable, 1, 5, "Bullish momentum fading", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+
+    table.cell(legendTable, 0, 6, "▲ Orange", text_color=color.new(color.orange, 30), text_size=size.small, text_halign=text.align_left)
+    table.cell(legendTable, 1, 6, "Bearish momentum fading", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+
+    // RSI Warnings
+    table.cell(legendTable, 0, 7, "X Red", text_color=color.new(color.red, 30), text_size=size.small, text_halign=text.align_left)
+    table.cell(legendTable, 1, 7, "RSI Overbought warning", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+
+    table.cell(legendTable, 0, 8, "X Green", text_color=color.rgb(6, 104, 9, 9), text_size=size.small, text_halign=text.align_left)
+    table.cell(legendTable, 1, 8, "RSI Oversold warning", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+
+    table.cell(legendTable, 0, 9, "• Gray", text_color=color.new(color.gray, 30), text_size=size.small, text_halign=text.align_left)
+    table.cell(legendTable, 1, 9, "Low Volume warning", text_color=color.gray, text_size=size.tiny, text_halign=text.align_left)
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Signal alerts
+alertcondition(finalConfirmedBuy and not finalConfirmedBuy[1], "Confirmed Buy", "MACD RSI Pro: Confirmed Buy Signal")
+alertcondition(finalConfirmedSell and not finalConfirmedSell[1], "Confirmed Sell", "MACD RSI Pro: Confirmed Sell Signal")
+alertcondition(finalStandardBuy and not finalStandardBuy[1], "Standard Buy", "MACD RSI Pro: Standard Buy Signal")
+alertcondition(finalStandardSell and not finalStandardSell[1], "Standard Sell", "MACD RSI Pro: Standard Sell Signal")
+alertcondition(counterTrendRally and not counterTrendRally[1], "Counter-Trend Rally", "MACD RSI Pro: Counter-Trend Rally (against EMA)")
+alertcondition(counterTrendPullback and not counterTrendPullback[1], "Counter-Trend Pullback", "MACD RSI Pro: Counter-Trend Pullback (against EMA)")
+alertcondition(bullScore >= confirmedThreshold and bullScore[1] < confirmedThreshold, "Bull Score Confirmed", "MACD RSI Pro: Bull confluence score reached confirmed threshold")
+alertcondition(bearScore >= confirmedThreshold and bearScore[1] < confirmedThreshold, "Bear Score Confirmed", "MACD RSI Pro: Bear confluence score reached confirmed threshold")
+
+// Divergence alerts
+alertcondition(bullishDivDetected, "Bullish RSI Divergence", "MACD RSI Pro: Bullish RSI Divergence detected")
+alertcondition(bearishDivDetected, "Bearish RSI Divergence", "MACD RSI Pro: Bearish RSI Divergence detected")
+alertcondition(macdBullishDivDetected, "Bullish MACD Divergence", "MACD RSI Pro: Bullish MACD Divergence detected")
+alertcondition(macdBearishDivDetected, "Bearish MACD Divergence", "MACD RSI Pro: Bearish MACD Divergence detected")
+
+// Momentum alerts
+alertcondition(momentumWeakening and histogram > 0, "Bullish Momentum Fading", "MACD RSI Pro: Bullish momentum weakening")
+alertcondition(momentumWeakening and histogram < 0, "Bearish Momentum Fading", "MACD RSI Pro: Bearish momentum weakening")
+
+// RSI alerts
+alertcondition(rsiValue >= rsiOverbought, "RSI Overbought", "MACD RSI Pro: RSI Overbought")
+alertcondition(rsiValue <= rsiOversold, "RSI Oversold", "MACD RSI Pro: RSI Oversold")
+
+// Volume alerts
+alertcondition(volumeSurge and histogram > 0 and bullScore >= minConfluenceScore, "High Volume Buy Signal", "MACD RSI Pro: High volume buy signal detected")
+alertcondition(volumeSurge and histogram < 0 and bearScore >= minConfluenceScore, "High Volume Sell Signal", "MACD RSI Pro: High volume sell signal detected")
+alertcondition(lowVolumeWarning, "Low Volume Warning", "MACD RSI Pro: Low volume on trending move")
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HIDDEN PLOTS FOR SCREENER
+// ═══════════════════════════════════════════════════════════════════════════
+
+plot(finalConfirmedBuy ? 1 : 0, "Confirmed Buy", display=display.none)
+plot(finalConfirmedSell ? 1 : 0, "Confirmed Sell", display=display.none)
+plot(finalStandardBuy ? 1 : 0, "Standard Buy", display=display.none)
+plot(finalStandardSell ? 1 : 0, "Standard Sell", display=display.none)
+plot(counterTrendRally ? 1 : 0, "Counter-Trend Rally", display=display.none)
+plot(counterTrendPullback ? 1 : 0, "Counter-Trend Pullback", display=display.none)
+plot(anyBullishDivergence ? 1 : 0, "Bullish Divergence", display=display.none)
+plot(anyBearishDivergence ? 1 : 0, "Bearish Divergence", display=display.none)
+plot(momentumStrengthening ? 1 : 0, "Momentum Accelerating", display=display.none)
+plot(momentumWeakening ? 1 : 0, "Momentum Decelerating", display=display.none)
+plot(volumeSurge ? 1 : 0, "Volume Surge", display=display.none)
+plot(aboveAverageVolume ? 1 : 0, "Above Average Volume", display=display.none)
+plot(volumeRatio, "Volume Ratio", display=display.none)
+plot(bullScore, "Bull Confluence Score", display=display.none)
+plot(bearScore, "Bear Confluence Score", display=display.none)
