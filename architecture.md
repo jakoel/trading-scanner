@@ -32,6 +32,7 @@ watchlist-summary/
 │   ├── indicators.js         # Pure port of the Pine indicator (see reference/)
 │   └── report.js             # Shared signal detection + Telegram formatting
 ├── data/bars/<SYMBOL>.csv    # One file per ticker: date,open,high,low,close,volume
+├── data/signals.csv          # Append-only historical log of every fired signal (never trimmed)
 ├── reference/
 │   ├── macd.txt               # Pine source for CM_MacD_Ult_MTF (historical reference only)
 │   └── indicatorSuite.txt     # Pine source for "MACD & RSI Smart Momentum Pro" — the ground truth lib/indicators.js ports
@@ -53,7 +54,7 @@ Each symbol has one CSV under `data/bars/`. On each run:
 2. If that's already today, skip the fetch entirely.
 3. Otherwise fetch only bars *after* that date from Yahoo Finance (normally just the latest 1 bar).
 4. If no CSV exists yet, do one full backfill (~750 calendar days, matching the Pine script's `max_bars_back=500`).
-5. Merge, dedupe by date, trim to the most recent 800 rows, write back.
+5. Merge, dedupe by date, trim to the most recent 400 rows, write back — keeps each CSV small (401 lines with header).
 
 No indicator state is cached — every run recomputes RSI/MACD/EMA/ATR/ADX fresh from the full stored OHLCV array (~500-800 rows, sub-10ms). Only raw price/volume history persists.
 
@@ -86,6 +87,12 @@ The two MACD signals are independent and can both fire for the same symbol (e.g.
 The Potential Buy signal originally used a static "within 3% above the ATR line" proximity check — a state check, not an event check, so a stock drifting slowly down toward its own (flat) trailing-stop line would get flagged every single day, not just the day it actually crossed. `detectAtrReclaim()` fixes this the same way the MACD signals were fixed: it requires an actual crossover within the lookback window (seen concretely with BRK-B, which sat continuously above its stop for 10+ days while just drifting closer — the old logic would've flagged it daily, the new logic correctly shows no signal). The legacy CDP scanner can't compute this, since CDP only exposes today's ATR Trailing Stop value, not per-bar history — its entries always carry `atrReclaimDaysAgo: null`, so it simply won't produce Potential Buy signals.
 
 `generateSummary()` adds inline annotations (RSI oversold/overbought, mixed trend, divergence, momentum fading, high volume, ATR proximity, EMA200 position).
+
+`isPotentialBuy(r)` and `getActiveSignals(r)` are the single source of truth for which signals are "firing" on a result entry — both `formatTelegramMessages()` and `lib/signalLog.js` use them, so the Telegram report and the historical signal log can never drift apart.
+
+## Historical Signal Log (`lib/signalLog.js`)
+
+Every run appends one row per fired signal to `data/signals.csv` — `date,symbol,signal,price,atr,ema200,rsi`, where `signal` is one of `POTENTIAL_BUY`, `MACD TURNED GREEN`, `MACD TURNED POSITIVE`. `date` is the bar's actual trading date (from `lib/indicators.js`'s row), not the run's wall-clock date, so a late/manual run still logs against the correct day. Unlike `data/bars/*.csv`, this file is append-only and never trimmed — it's a growing record for later research into which signals actually worked (e.g. cross-referencing against `data/bars/*.csv` price history N days later).
 
 ## Telegram Report Format
 

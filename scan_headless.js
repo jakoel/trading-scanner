@@ -16,6 +16,7 @@ import { sendMessage } from './telegram.js';
 import { updateBars } from './lib/bars.js';
 import { computeIndicators } from './lib/indicators.js';
 import { detectMacdSignals, detectAtrReclaim, generateSummary, formatTelegramMessages, MACD_LOOKBACK_DAYS, ATR_LOOKBACK_DAYS } from './lib/report.js';
+import { logSignals } from './lib/signalLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -64,7 +65,7 @@ async function main() {
       });
 
       const entry = {
-        symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo,
+        symbol, date: last.date, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo,
         trend: last.trend, htfTrend: last.htfTrend, momentum: last.momentum,
         divergence: last.divergence, volume: last.volume, summary,
       };
@@ -82,6 +83,8 @@ async function main() {
   }
 
   if (results.length > 0) {
+    logSignals(results);
+
     const msgs = formatTelegramMessages(results);
     if (msgs.length === 0) {
       console.log('\nNo buys or MACD signals — skipping Telegram.');
