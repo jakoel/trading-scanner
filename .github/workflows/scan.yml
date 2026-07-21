@@ -1,19 +1,13 @@
 name: Watchlist Scan
 
-# Israel alternates between UTC+2 (IST, winter) and UTC+3 (IDT, summer), so a
-# single fixed-UTC cron would drift an hour off 16:00 Israel time twice a year.
-# Both possible UTC times are scheduled below; the "Check target time" step
-# reads the real Israel wall-clock time (tzdata handles DST automatically) and
-# only lets the matching run continue.
-#
-# Fired at :05 rather than :00 — GitHub Actions cron runs are best-effort and
-# top-of-the-hour schedules see the heaviest queueing, which can delay or drop
-# a run entirely. Minute offset doesn't affect correctness since "Check target
-# time" only checks the Israel hour, not the minute.
+# GitHub Actions' native `schedule` trigger proved unreliable for this repo —
+# observed both multi-hour-late fires and complete no-shows on consecutive
+# days (schedule events are best-effort and can be delayed or dropped,
+# especially for low-activity repos). The real trigger now lives outside
+# GitHub: an external scheduler (cron-job.org) calls the REST API to fire
+# `workflow_dispatch` at 16:00 Israel time daily, which runs on-demand with
+# no queueing. See architecture.md for the exact setup.
 on:
-  schedule:
-    - cron: '5 13 * * 1-5'  # ~16:00 Israel time during IDT (UTC+3, summer)
-    - cron: '5 14 * * 1-5'  # ~16:00 Israel time during IST (UTC+2, winter)
   workflow_dispatch: {}
 
 permissions:
@@ -23,37 +17,21 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Check target time
-        id: check
-        run: |
-          HOUR=$(TZ=Asia/Jerusalem date +%H)
-          echo "Current Israel hour: $HOUR"
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$HOUR" = "16" ]; then
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Checkout
-        if: steps.check.outputs.should_run == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Node
-        if: steps.check.outputs.should_run == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: Install dependencies
-        if: steps.check.outputs.should_run == 'true'
         run: npm ci
 
       - name: Run headless scan
-        if: steps.check.outputs.should_run == 'true'
         run: npm run scan:headless
 
       - name: Commit updated bar data
-        if: steps.check.outputs.should_run == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

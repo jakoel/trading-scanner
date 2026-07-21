@@ -2,10 +2,10 @@
 
 ## Overview
 
-Headless Node.js scanner — no TradingView Desktop, no CDP, no browser. Pulls daily OHLCV per symbol from Yahoo Finance (persisted incrementally in `data/bars/`), recomputes the full indicator suite locally, detects MACD signals over a lookback window, and sends a formatted report to Telegram. Runs on a schedule via GitHub Actions.
+Headless Node.js scanner — no TradingView Desktop, no CDP, no browser. Pulls daily OHLCV per symbol from Yahoo Finance (persisted incrementally in `data/bars/`), recomputes the full indicator suite locally, detects MACD signals over a lookback window, and sends a formatted report to Telegram. Runs Mon-Fri at 16:00 Israel time via GitHub Actions, triggered by an external scheduler (see "Triggering the Daily Run" below) rather than GitHub's native cron.
 
 ```
-GitHub Actions (cron, Mon-Fri 16:00 Israel time)
+External scheduler (cron-job.org) ──POST workflow_dispatch──> GitHub Actions
         ↓
 scan_headless.js
         ↓
@@ -40,7 +40,7 @@ watchlist-summary/
 │   ├── scan_watchlist.js      # Original CDP-based scanner (local cross-check only)
 │   ├── scan.bat               # Launches TradingView + runs legacy/scan_watchlist.js
 │   └── launch_tv_debug.bat    # Launches TradingView Desktop with CDP enabled
-├── .github/workflows/scan.yml # Cron trigger, runs scan_headless.js, commits data/bars/
+├── .github/workflows/scan.yml # workflow_dispatch trigger, runs scan_headless.js, commits data/bars/
 ├── telegram.js                # sendMessage(text) → Telegram Bot API
 ├── watchlist.txt               # One symbol per line. # lines are comments.
 ├── telegram.config.json        # { "botToken": "...", "chatId": "..." }
@@ -112,9 +112,24 @@ Every run appends one row per fired signal to `data/signals.csv` — `date,symbo
 
 Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
 
-## GitHub Actions Schedule
+## Triggering the Daily Run
 
-`.github/workflows/scan.yml` triggers Mon-Fri. Israel alternates between UTC+2 (IST, winter) and UTC+3 (IDT, summer), so a single fixed-UTC cron would drift an hour off 16:00 Israel time twice a year. Both possible UTC times are scheduled (`13:00` and `14:00` UTC); a "Check target time" step reads the real `Asia/Jerusalem` wall-clock hour (tzdata handles DST automatically) and only lets the matching run continue past that step. A `workflow_dispatch` trigger is also available for manual runs.
+`.github/workflows/scan.yml` only declares `workflow_dispatch` — there is no native GitHub Actions `schedule` trigger. That's deliberate: `schedule` events are best-effort and this repo saw them both fire hours late (skipping the actual scan once a hand-rolled hour guard caught the mismatch) and not fire at all on other days, even after moving the cron off the top of the hour. GitHub Actions' scheduler is simply not reliable enough for a "same time every day" requirement here.
+
+Instead, an **external scheduler calls the GitHub REST API to fire `workflow_dispatch`** at 16:00 Israel time, Mon-Fri:
+
+```
+POST https://api.github.com/repos/jakoel/trading-scanner/actions/workflows/scan.yml/dispatches
+Authorization: Bearer <PAT with Actions: Read and write on this repo>
+Accept: application/vnd.github+json
+Content-Type: application/json
+
+{ "ref": "main" }
+```
+
+Set up with e.g. [cron-job.org](https://cron-job.org) (free): create a job hitting the URL above with those headers/body, scheduled for 16:00 with the **time zone explicitly set to `Asia/Jerusalem`** (not a fixed UTC offset) so DST is handled by the scheduler itself — no need to juggle two UTC crons the way the old `schedule:` block did. The PAT lives only in the external scheduler's job config, never committed to this repo.
+
+`workflow_dispatch` runs on-demand — no queueing, so no analogue of the schedule delays observed above. The workflow has no day-level de-duplication, so keep the external job to once/day; running it twice in the same day would re-send Telegram alerts for the same signals since the daily bar hasn't changed yet.
 
 The workflow needs **Settings → Actions → General → Workflow permissions → Read and write** enabled, since it commits updated `data/bars/*.csv` back to the repo after each run.
 
