@@ -15,6 +15,14 @@ node scan_headless.js
 
 No TradingView, no external services beyond Yahoo Finance (for daily bars) and Telegram (for the report). Runs automatically via `.github/workflows/scan.yml`.
 
+**When testing or verifying a change (e.g. new/modified signal logic), always use `--dry-run`:**
+
+```bash
+node scan_headless.js --dry-run
+```
+
+Prints the report to stdout instead of posting it — bar data and `data/signals.csv` still update normally, only the Telegram send is skipped. Without this flag, every run posts a real message to the user's live Telegram broadcast channel, which is noisy for their audience. Only omit `--dry-run` for actual scheduled/production runs.
+
 ## Key files
 
 | File | Purpose |
