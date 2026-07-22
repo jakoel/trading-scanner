@@ -224,9 +224,9 @@ async function main() {
 
       const summary = generateSummary({ price, atr, ema200, rsi, macdHist, trend, htfTrend, momentum, divergence, volume });
 
-      // No historical ATR Trailing Stop is available from CDP (only today's snapshot),
-      // so this legacy path can't detect a real reclaim event — see architecture.md.
-      const entry = { symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo: null, trend, htfTrend, momentum, divergence, volume, summary };
+      // No historical ATR Trailing Stop or RSI is available from CDP (only today's
+      // snapshot), so this legacy path can't detect real crossover events — see architecture.md.
+      const entry = { symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo: null, rsiSignals: [], trend, htfTrend, momentum, divergence, volume, summary };
       results.push(entry);
 
       const pct = ((price - atr) / atr * 100).toFixed(1);

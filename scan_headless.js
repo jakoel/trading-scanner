@@ -15,7 +15,7 @@ import { dirname, join } from 'path';
 import { sendMessage } from './telegram.js';
 import { updateBars } from './lib/bars.js';
 import { computeIndicators } from './lib/indicators.js';
-import { detectMacdSignals, detectAtrReclaim, generateSummary, formatTelegramMessages, MACD_LOOKBACK_DAYS, ATR_LOOKBACK_DAYS } from './lib/report.js';
+import { detectMacdSignals, detectAtrReclaim, detectRsiSignals, generateSummary, formatTelegramMessages, MACD_LOOKBACK_DAYS, ATR_LOOKBACK_DAYS, RSI_RECLAIM_LOOKBACK_DAYS } from './lib/report.js';
 import { logSignals } from './lib/signalLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -53,10 +53,12 @@ async function main() {
       // matching the shape lib/report.js expects for crossover detection.
       const macdHistory = rows.slice(-7).map(r => ({ macd: r.macdLine, hist: r.histogram }));
       const atrHistory = rows.slice(-7).map(r => ({ price: r.price, atr: r.atrTrailingStop }));
+      const rsiHistory = rows.slice(-7).map(r => ({ rsi: r.rsi }));
 
       const { macdSignals, positiveCrossDaysAgo, greenCrossDaysAgo, todayHistVal } =
         detectMacdSignals(macdLineVal, macdHistory);
       const atrReclaimDaysAgo = detectAtrReclaim(atrHistory);
+      const { rsiSignals, reclaimDaysAgo } = detectRsiSignals(rsiHistory);
 
       const summary = generateSummary({
         price, atr, ema200, rsi,
@@ -65,7 +67,7 @@ async function main() {
       });
 
       const entry = {
-        symbol, date: last.date, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo,
+        symbol, date: last.date, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo, rsiSignals,
         trend: last.trend, htfTrend: last.htfTrend, momentum: last.momentum,
         divergence: last.divergence, volume: last.volume, summary,
       };
@@ -77,6 +79,7 @@ async function main() {
       console.log(`    [MACD DEBUG] macdLineVal=${macdLineVal} macdHistRaw="${macdHist}" todayHistVal=${todayHistVal} price=${price}`);
       console.log(`    [MACD DEBUG] positiveCrossDaysAgo=${positiveCrossDaysAgo} greenCrossDaysAgo=${greenCrossDaysAgo} lookback=${MACD_LOOKBACK_DAYS}d | macdSignals=${macdSignals.length ? macdSignals.join(', ') : 'none'}`);
       console.log(`    [ATR DEBUG] atrReclaimDaysAgo=${atrReclaimDaysAgo} lookback=${ATR_LOOKBACK_DAYS}d`);
+      console.log(`    [RSI DEBUG] reclaimDaysAgo=${reclaimDaysAgo} lookback=${RSI_RECLAIM_LOOKBACK_DAYS}d | rsiSignals=${rsiSignals.length ? rsiSignals.join(', ') : 'none'}`);
     } catch (e) {
       console.log(`  ${symbol.padEnd(6)} — error: ${e.message}`);
     }
