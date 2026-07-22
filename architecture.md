@@ -78,29 +78,29 @@ Both scanners import this module, so behavior never drifts between the headless 
 
 | Signal | Condition |
 |--------|-----------|
-| 🎯 Potential Buy | `price` crossed from at/below the ATR Trailing Stop to above it within the last `ATR_LOOKBACK_DAYS` (5) trading days (`detectAtrReclaim()`), AND is still above it today, AND `price > ema200`, AND `htfTrend === 'BULLISH'` |
+| 🎯 ATR Reclaim (Bullish Confluence) | `price` crossed from at/below the ATR Trailing Stop to above it within the last `ATR_LOOKBACK_DAYS` (5) trading days (`detectAtrReclaim()`), AND is still above it today, AND `price > ema200`, AND `htfTrend === 'BULLISH'`. Named for the mechanical event, not "buy" — the condition alone isn't a trade recommendation. |
 | ⚡ MACD TURNED GREEN | Histogram crossed from ≤0 to >0 within the last 5 trading days, AND today's histogram is still >0. Independent of the MACD line's sign — an early heads-up if the line is still negative, or a continuation signal if the line is already positive. |
 | ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 within the last 5 trading days, AND is still >0 today. A more mature momentum confirmation than TURNED GREEN. |
 | 📈 RSI RECLAIMED 30 | RSI crossed from ≤30 to >30 on **today's bar only** (`RSI_RECLAIM_LOOKBACK_DAYS = 1`, `detectRsiSignals()`) — fires once, the exact day it pops back out of oversold, not the day it dropped below 30 and not on subsequent days it happens to still be above 30. Telegram line includes the current RSI value. |
 
 The two MACD signals are independent and can both fire for the same symbol (e.g. histogram crossed green a few days before the line itself crossed positive). RSI RECLAIMED 30 is deliberately a same-day-only event (lookback of 1), unlike the 5-day lookback MACD/ATR signals — the point is to catch stocks the moment they exit oversold, not to keep flagging them for days afterward.
 
-The Potential Buy signal originally used a static "within 3% above the ATR line" proximity check — a state check, not an event check, so a stock drifting slowly down toward its own (flat) trailing-stop line would get flagged every single day, not just the day it actually crossed. `detectAtrReclaim()` fixes this the same way the MACD signals were fixed: it requires an actual crossover within the lookback window (seen concretely with BRK-B, which sat continuously above its stop for 10+ days while just drifting closer — the old logic would've flagged it daily, the new logic correctly shows no signal). The legacy CDP scanner can't compute this, since CDP only exposes today's ATR Trailing Stop value, not per-bar history — its entries always carry `atrReclaimDaysAgo: null`, so it simply won't produce Potential Buy signals.
+The ATR Reclaim signal originally used a static "within 3% above the ATR line" proximity check — a state check, not an event check, so a stock drifting slowly down toward its own (flat) trailing-stop line would get flagged every single day, not just the day it actually crossed. `detectAtrReclaim()` fixes this the same way the MACD signals were fixed: it requires an actual crossover within the lookback window (seen concretely with BRK-B, which sat continuously above its stop for 10+ days while just drifting closer — the old logic would've flagged it daily, the new logic correctly shows no signal). The legacy CDP scanner can't compute this, since CDP only exposes today's ATR Trailing Stop value, not per-bar history — its entries always carry `atrReclaimDaysAgo: null`, so it simply won't produce ATR Reclaim signals. It was originally called "Potential Buy" — renamed since the condition (trend-continuation reclaim with bullish confluence) isn't itself a trade recommendation.
 
 `generateSummary()` adds inline annotations (RSI oversold/overbought, mixed trend, divergence, momentum fading, high volume, ATR proximity, EMA200 position).
 
-`isPotentialBuy(r)` and `getActiveSignals(r)` are the single source of truth for which signals are "firing" on a result entry — both `formatTelegramMessages()` and `lib/signalLog.js` use them, so the Telegram report and the historical signal log can never drift apart.
+`isAtrReclaim(r)` and `getActiveSignals(r)` are the single source of truth for which signals are "firing" on a result entry — both `formatTelegramMessages()` and `lib/signalLog.js` use them, so the Telegram report and the historical signal log can never drift apart.
 
 ## Historical Signal Log (`lib/signalLog.js`)
 
-Every run appends one row per fired signal to `data/signals.csv` — `date,symbol,signal,price,atr,ema200,rsi`, where `signal` is one of `POTENTIAL_BUY`, `MACD TURNED GREEN`, `MACD TURNED POSITIVE`, `RSI RECLAIMED 30`. `date` is the bar's actual trading date (from `lib/indicators.js`'s row), not the run's wall-clock date, so a late/manual run still logs against the correct day. Unlike `data/bars/*.csv`, this file is append-only and never trimmed — it's a growing record for later research into which signals actually worked (e.g. cross-referencing against `data/bars/*.csv` price history N days later).
+Every run appends one row per fired signal to `data/signals.csv` — `date,symbol,signal,price,atr,ema200,rsi`, where `signal` is one of `ATR RECLAIM`, `MACD TURNED GREEN`, `MACD TURNED POSITIVE`, `RSI RECLAIMED 30`. `date` is the bar's actual trading date (from `lib/indicators.js`'s row), not the run's wall-clock date, so a late/manual run still logs against the correct day. Unlike `data/bars/*.csv`, this file is append-only and never trimmed — it's a growing record for later research into which signals actually worked (e.g. cross-referencing against `data/bars/*.csv` price history N days later).
 
 ## Telegram Report Format
 
 ```
 *Watchlist Scan*
 
-*🎯 Potential Buys (just above ATR):*
+*🎯 ATR Reclaim (Bullish Confluence):*
 *SYMBOL* $price (+x.x%)
   _just reclaimed ATR, above EMA200_
 
@@ -109,6 +109,9 @@ Every run appends one row per fired signal to `data/signals.csv` — `date,symbo
 
 ⚡ MACD Turned Positive:
 *MSFT* $390.00
+
+📈 RSI Reclaimed 30 (Out of Oversold):
+*SYMBOL* $price (RSI xx.xx)
 ```
 
 Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
