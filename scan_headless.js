@@ -16,7 +16,7 @@ import { dirname, join } from 'path';
 import { sendMessage } from './telegram.js';
 import { updateBars } from './lib/bars.js';
 import { computeIndicators } from './lib/indicators.js';
-import { detectMacdSignals, detectAtrReclaim, detectRsiSignals, generateSummary, formatTelegramMessages, MACD_LOOKBACK_DAYS, ATR_LOOKBACK_DAYS, RSI_RECLAIM_LOOKBACK_DAYS } from './lib/report.js';
+import { detectMacdSignals, detectAtrReclaim, detectRsiSignals, detectVolumeSignals, generateSummary, formatTelegramMessages, MACD_LOOKBACK_DAYS, ATR_LOOKBACK_DAYS, RSI_RECLAIM_LOOKBACK_DAYS, VOLUME_SURGE_THRESHOLD } from './lib/report.js';
 import { logSignals } from './lib/signalLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -62,6 +62,8 @@ async function main() {
         detectMacdSignals(macdLineVal, macdHistory);
       const atrReclaimDaysAgo = detectAtrReclaim(atrHistory);
       const { rsiSignals, reclaimDaysAgo } = detectRsiSignals(rsiHistory);
+      const prevPrice = rows.length >= 2 ? rows[rows.length - 2].price : null;
+      const { volumeSignals } = detectVolumeSignals({ volumeRatio: last.volumeRatio, price, prevPrice });
 
       const summary = generateSummary({
         price, atr, ema200, rsi,
@@ -71,6 +73,7 @@ async function main() {
 
       const entry = {
         symbol, date: last.date, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo, rsiSignals,
+        volumeSignals, volumeRatio: last.volumeRatio,
         trend: last.trend, htfTrend: last.htfTrend, momentum: last.momentum,
         divergence: last.divergence, volume: last.volume, summary,
       };
@@ -83,6 +86,7 @@ async function main() {
       console.log(`    [MACD DEBUG] positiveCrossDaysAgo=${positiveCrossDaysAgo} greenCrossDaysAgo=${greenCrossDaysAgo} lookback=${MACD_LOOKBACK_DAYS}d | macdSignals=${macdSignals.length ? macdSignals.join(', ') : 'none'}`);
       console.log(`    [ATR DEBUG] atrReclaimDaysAgo=${atrReclaimDaysAgo} lookback=${ATR_LOOKBACK_DAYS}d`);
       console.log(`    [RSI DEBUG] reclaimDaysAgo=${reclaimDaysAgo} lookback=${RSI_RECLAIM_LOOKBACK_DAYS}d | rsiSignals=${rsiSignals.length ? rsiSignals.join(', ') : 'none'}`);
+      console.log(`    [VOLUME DEBUG] volumeRatio=${last.volumeRatio} threshold=${VOLUME_SURGE_THRESHOLD}x prevPrice=${prevPrice} | volumeSignals=${volumeSignals.length ? volumeSignals.join(', ') : 'none'}`);
     } catch (e) {
       console.log(`  ${symbol.padEnd(6)} — error: ${e.message}`);
     }

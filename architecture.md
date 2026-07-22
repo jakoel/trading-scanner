@@ -82,8 +82,9 @@ Both scanners import this module, so behavior never drifts between the headless 
 | ⚡ MACD TURNED GREEN | Histogram crossed from ≤0 to >0 within the last 5 trading days, AND today's histogram is still >0. Independent of the MACD line's sign — an early heads-up if the line is still negative, or a continuation signal if the line is already positive. |
 | ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 within the last 5 trading days, AND is still >0 today. A more mature momentum confirmation than TURNED GREEN. |
 | 📈 RSI RECLAIMED 30 | RSI crossed from ≤30 to >30 on **today's bar only** (`RSI_RECLAIM_LOOKBACK_DAYS = 1`, `detectRsiSignals()`) — fires once, the exact day it pops back out of oversold, not the day it dropped below 30 and not on subsequent days it happens to still be above 30. Telegram line includes the current RSI value. |
+| 📊 VOLUME SURGE | `volumeRatio` (today's volume vs 20-day average, from `lib/indicators.js`) is ≥ `VOLUME_SURGE_THRESHOLD` (1.5x), AND today's close is above yesterday's close (`detectVolumeSignals()`). Unlike every other signal here, this is a **state check, not an event** — it fires every day volume stays elevated on an up day, not just the first day, by design (sustained high-volume buying is itself noteworthy each day it continues). Telegram line includes the volume ratio. |
 
-The two MACD signals are independent and can both fire for the same symbol (e.g. histogram crossed green a few days before the line itself crossed positive). RSI RECLAIMED 30 is deliberately a same-day-only event (lookback of 1), unlike the 5-day lookback MACD/ATR signals — the point is to catch stocks the moment they exit oversold, not to keep flagging them for days afterward.
+The two MACD signals are independent and can both fire for the same symbol (e.g. histogram crossed green a few days before the line itself crossed positive). RSI RECLAIMED 30 is deliberately a same-day-only event (lookback of 1), unlike the 5-day lookback MACD/ATR signals — the point is to catch stocks the moment they exit oversold, not to keep flagging them for days afterward. VOLUME SURGE is the one exception to the event-not-state pattern used elsewhere in this file — a deliberate choice, not an oversight.
 
 The ATR Reclaim signal originally used a static "within 3% above the ATR line" proximity check — a state check, not an event check, so a stock drifting slowly down toward its own (flat) trailing-stop line would get flagged every single day, not just the day it actually crossed. `detectAtrReclaim()` fixes this the same way the MACD signals were fixed: it requires an actual crossover within the lookback window (seen concretely with BRK-B, which sat continuously above its stop for 10+ days while just drifting closer — the old logic would've flagged it daily, the new logic correctly shows no signal). The legacy CDP scanner can't compute this, since CDP only exposes today's ATR Trailing Stop value, not per-bar history — its entries always carry `atrReclaimDaysAgo: null`, so it simply won't produce ATR Reclaim signals. It was originally called "Potential Buy" — renamed since the condition (trend-continuation reclaim with bullish confluence) isn't itself a trade recommendation.
 
@@ -93,7 +94,7 @@ The ATR Reclaim signal originally used a static "within 3% above the ATR line" p
 
 ## Historical Signal Log (`lib/signalLog.js`)
 
-Every run appends one row per fired signal to `data/signals.csv` — `date,symbol,signal,price,atr,ema200,rsi`, where `signal` is one of `ATR RECLAIM`, `MACD TURNED GREEN`, `MACD TURNED POSITIVE`, `RSI RECLAIMED 30`. `date` is the bar's actual trading date (from `lib/indicators.js`'s row), not the run's wall-clock date, so a late/manual run still logs against the correct day. Unlike `data/bars/*.csv`, this file is append-only and never trimmed — it's a growing record for later research into which signals actually worked (e.g. cross-referencing against `data/bars/*.csv` price history N days later).
+Every run appends one row per fired signal to `data/signals.csv` — `date,symbol,signal,price,atr,ema200,rsi`, where `signal` is one of `ATR RECLAIM`, `MACD TURNED GREEN`, `MACD TURNED POSITIVE`, `RSI RECLAIMED 30`, `VOLUME SURGE`. Note `VOLUME SURGE` is a state signal, so it can log the same symbol on consecutive days while volume stays elevated — every other signal here logs only once per event. `date` is the bar's actual trading date (from `lib/indicators.js`'s row), not the run's wall-clock date, so a late/manual run still logs against the correct day. Unlike `data/bars/*.csv`, this file is append-only and never trimmed — it's a growing record for later research into which signals actually worked (e.g. cross-referencing against `data/bars/*.csv` price history N days later).
 
 ## Telegram Report Format
 
@@ -112,6 +113,11 @@ Every run appends one row per fired signal to `data/signals.csv` — `date,symbo
 
 📈 RSI Reclaimed 30 (Out of Oversold):
 *SYMBOL* $price (RSI xx.xx)
+
+📊 Volume Surge:
+*SYMBOL* $price (N.NNx avg vol)
+```
+```
 ```
 
 Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
