@@ -7,7 +7,8 @@
  * Telegram report as scan_watchlist.js via the shared lib/report.js logic.
  *
  * Usage:
- *   node scan_headless.js
+ *   node scan_headless.js             # normal run, posts to Telegram
+ *   node scan_headless.js --dry-run   # prints the report instead of sending it
  */
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -25,6 +26,8 @@ const watchlist = readFileSync(join(__dirname, 'watchlist.txt'), 'utf-8')
   .split('\n')
   .map(s => s.trim())
   .filter(s => s && !s.startsWith('#'));
+
+const dryRun = process.argv.includes('--dry-run');
 
 async function main() {
   console.log(`Scanning ${watchlist.length} symbols...`);
@@ -91,6 +94,13 @@ async function main() {
     const msgs = formatTelegramMessages(results);
     if (msgs.length === 0) {
       console.log('\nNo buys or MACD signals — skipping Telegram.');
+    } else if (dryRun) {
+      console.log(`\n[DRY RUN] Would send ${msgs.length} Telegram message(s):\n`);
+      for (const msg of msgs) {
+        console.log('---');
+        console.log(msg);
+      }
+      console.log('---');
     } else {
       console.log(`\nSending Telegram alert (${msgs.length} message(s))...`);
       for (const msg of msgs) {
