@@ -11,10 +11,13 @@ const __dirname = dirname(__filename);
 const CONFIG_PATH = join(__dirname, 'telegram.config.json');
 
 function loadConfig() {
+  if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+    return { botToken: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID };
+  }
   try {
     return JSON.parse(readFileSync(CONFIG_PATH, 'utf-8'));
   } catch (e) {
-    throw new Error(`Missing telegram.config.json: ${e.message}`);
+    throw new Error(`Missing Telegram credentials: no TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID env vars and no telegram.config.json (${e.message})`);
   }
 }
 

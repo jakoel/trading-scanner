@@ -37,6 +37,9 @@ jobs:
         run: npm ci
 
       - name: Run headless scan
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: npm run scan:headless -- ${{ inputs.dry_run && '--dry-run' || '' }}
 
       - name: Commit updated bar data

@@ -1,3 +1,4 @@
 node_modules/
 *.log
 last_run.txt
+telegram.config.json
