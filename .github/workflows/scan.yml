@@ -36,6 +36,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check Telegram secrets (temporary diagnostic — remove after confirming)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ]; then echo "TELEGRAM_BOT_TOKEN: present (length ${#TELEGRAM_BOT_TOKEN})"; else echo "TELEGRAM_BOT_TOKEN: MISSING"; fi
+          if [ -n "$TELEGRAM_CHAT_ID" ]; then echo "TELEGRAM_CHAT_ID: present (length ${#TELEGRAM_CHAT_ID})"; else echo "TELEGRAM_CHAT_ID: MISSING"; fi
+
       - name: Run headless scan
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
