@@ -7,8 +7,16 @@ name: Watchlist Scan
 # GitHub: an external scheduler (cron-job.org) calls the REST API to fire
 # `workflow_dispatch` at 16:00 Israel time daily, which runs on-demand with
 # no queueing. See architecture.md for the exact setup.
+#
+# The external scheduler's POST body never sets `dry_run`, so it always
+# defaults to false — production runs are unaffected by this input existing.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (skip Telegram + data commit, print report to the job log)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -29,9 +37,10 @@ jobs:
         run: npm ci
 
       - name: Run headless scan
-        run: npm run scan:headless
+        run: npm run scan:headless -- ${{ inputs.dry_run && '--dry-run' || '' }}
 
       - name: Commit updated bar data
+        if: ${{ !inputs.dry_run }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
