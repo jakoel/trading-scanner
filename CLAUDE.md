@@ -28,13 +28,13 @@ Prints the report to stdout instead of posting it — bar data and `data/signals
 | File | Purpose |
 |------|---------|
 | `scan_headless.js` | Entry point: pulls bars, computes indicators, detects signals, sends the report |
-| `lib/bars.js` | Persisted per-symbol OHLCV in `data/bars/*.csv`, incrementally fetched via Yahoo Finance |
+| `lib/bars.js` | Persisted OHLCV in `data/bars.db` (SQLite), incrementally fetched via Yahoo Finance |
 | `lib/indicators.js` | Pure reimplementation of the Pine indicator (`reference/indicatorSuite.txt`) — RSI, MACD, ATR, ADX, divergence, confluence score, ATR trailing stop |
 | `lib/report.js` | Shared signal detection (5-day lookback crossovers) + Telegram formatting, used by both scanners |
 | `telegram.js` | `sendMessage(text)` — Telegram Bot API wrapper |
 | `watchlist.txt` | Symbols to scan, one per line (`#` = comment) |
 | `telegram.config.json` | `{ "botToken": "...", "chatId": "..." }` |
-| `.github/workflows/scan.yml` | `workflow_dispatch`-only trigger (fired daily by an external scheduler, Mon–Fri 16:00 Israel time), runs the scan, commits updated `data/bars/*.csv` |
+| `.github/workflows/scan.yml` | `workflow_dispatch`-only trigger (fired daily by an external scheduler, Mon–Fri 16:00 Israel time), runs the scan, commits updated `data/bars.db` |
 | `architecture.md` | Full technical reference |
 | `legacy/` | Original TradingView/CDP-based scanner — kept for local cross-checking against the live indicator, not used by automation. See `legacy/README` note in architecture.md. |
 | `reference/` | Raw Pine source (`macd.txt`, `indicatorSuite.txt`) that `lib/indicators.js` was ported from |
