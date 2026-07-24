@@ -1,7 +1,7 @@
 /**
  * Headless watchlist scanner — no TradingView Desktop, no CDP, no GUI.
  *
- * Pulls daily OHLCV per symbol (persisted incrementally in data/bars/*.csv,
+ * Pulls daily OHLCV per symbol (persisted incrementally in data/bars.db,
  * fetched via Yahoo Finance), recomputes the full indicator suite locally
  * (lib/indicators.js, a port of indicatorSuite.txt), and sends the same
  * Telegram report as scan_watchlist.js via the shared lib/report.js logic.
@@ -16,7 +16,7 @@ import { dirname, join } from 'path';
 import { sendMessage } from './telegram.js';
 import { updateBars } from './lib/bars.js';
 import { computeIndicators } from './lib/indicators.js';
-import { detectMacdSignals, detectAtrReclaim, detectRsiSignals, detectVolumeSignals, generateSummary, formatTelegramMessages, MACD_LOOKBACK_DAYS, ATR_LOOKBACK_DAYS, RSI_RECLAIM_LOOKBACK_DAYS, VOLUME_SURGE_THRESHOLD } from './lib/report.js';
+import { detectMacdSignals, detectAtrReclaim, detectRsiSignals, detectVolumeSignals, generateSummary, formatTelegramMessages } from './lib/report.js';
 import { logSignals } from './lib/signalLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -58,10 +58,9 @@ async function main() {
       const atrHistory = rows.slice(-7).map(r => ({ price: r.price, atr: r.atrTrailingStop }));
       const rsiHistory = rows.slice(-7).map(r => ({ rsi: r.rsi }));
 
-      const { macdSignals, positiveCrossDaysAgo, greenCrossDaysAgo, todayHistVal } =
-        detectMacdSignals(macdLineVal, macdHistory);
+      const { macdSignals } = detectMacdSignals(macdLineVal, macdHistory);
       const atrReclaimDaysAgo = detectAtrReclaim(atrHistory);
-      const { rsiSignals, reclaimDaysAgo } = detectRsiSignals(rsiHistory);
+      const { rsiSignals } = detectRsiSignals(rsiHistory);
       const prevPrice = rows.length >= 2 ? rows[rows.length - 2].price : null;
       const { volumeSignals } = detectVolumeSignals({ volumeRatio: last.volumeRatio, price, prevPrice });
 
@@ -82,11 +81,6 @@ async function main() {
       const pct = ((price - atr) / atr * 100).toFixed(1);
       const tag = price > atr ? 'ABOVE' : 'BELOW';
       console.log(`  ${symbol.padEnd(6)} $${price.toFixed(2).padStart(8)} | ATR $${atr.toFixed(2).padStart(8)} | ${pct}% ${tag} | RSI ${rsi} | ${last.trend} | ${summary}`);
-      console.log(`    [MACD DEBUG] macdLineVal=${macdLineVal} macdHistRaw="${macdHist}" todayHistVal=${todayHistVal} price=${price}`);
-      console.log(`    [MACD DEBUG] positiveCrossDaysAgo=${positiveCrossDaysAgo} greenCrossDaysAgo=${greenCrossDaysAgo} lookback=${MACD_LOOKBACK_DAYS}d | macdSignals=${macdSignals.length ? macdSignals.join(', ') : 'none'}`);
-      console.log(`    [ATR DEBUG] atrReclaimDaysAgo=${atrReclaimDaysAgo} lookback=${ATR_LOOKBACK_DAYS}d`);
-      console.log(`    [RSI DEBUG] reclaimDaysAgo=${reclaimDaysAgo} lookback=${RSI_RECLAIM_LOOKBACK_DAYS}d | rsiSignals=${rsiSignals.length ? rsiSignals.join(', ') : 'none'}`);
-      console.log(`    [VOLUME DEBUG] volumeRatio=${last.volumeRatio} threshold=${VOLUME_SURGE_THRESHOLD}x prevPrice=${prevPrice} | volumeSignals=${volumeSignals.length ? volumeSignals.join(', ') : 'none'}`);
     } catch (e) {
       console.log(`  ${symbol.padEnd(6)} — error: ${e.message}`);
     }
