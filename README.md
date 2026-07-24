@@ -1,36 +1,24 @@
 # Watchlist Summary Scanner
 
-Headless Node.js watchlist scanner — no TradingView Desktop, no browser, no GUI. Pulls daily price history from Yahoo Finance, reimplements the MACD/RSI/ATR/ADX indicator logic locally, and sends a formatted Telegram report. Runs automatically on a schedule via GitHub Actions (Mon–Fri, 16:00 Israel time), or manually with one command.
+Headless Node.js watchlist scanner — no TradingView Desktop, no browser, no GUI. Pulls daily price history from Yahoo Finance, reimplements the MACD/RSI/ATR/ADX indicator logic locally, and sends a formatted Telegram report. The whole pipeline runs on GitHub Actions — there's no local setup step for normal use.
 
 ## Setup
 
-```bash
-npm install
-```
+Set two repository secrets under **Settings → Secrets and variables → Actions → New repository secret**:
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
 
-Create `telegram.config.json` (gitignored — never commit real credentials):
-```json
-{
-  "botToken": "YOUR_BOT_TOKEN",
-  "chatId": "YOUR_CHAT_ID"
-}
-```
-
-In GitHub Actions, `telegram.js` reads `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` env vars instead (falls back to the config file if unset) — set these as repo secrets under Settings → Secrets and variables → Actions.
+`telegram.js` reads these as environment variables in the workflow. Nothing needs to be created or edited locally — there's no `telegram.config.json` to fill in for the GitHub Actions path (that file only matters for local/legacy runs — see below).
 
 ## Usage
 
-Edit `watchlist.txt` (one ticker per line), then run:
+Edit `watchlist.txt` (one ticker per line) and push to `main`. To run the scan itself, go to the **Actions** tab on GitHub → **"Watchlist Scan"** → **Run workflow**:
+- Leave **Dry run** unchecked for a real run — sends the Telegram report and commits updated bar data (`data/bars.db`) back to the repo.
+- Check **Dry run** to print the report to the workflow's job log instead — skips Telegram and skips the data commit, safe to trigger repeatedly while testing.
 
-```bash
-node scan_headless.js
-```
+In production, an external scheduler (cron-job.org) fires this same workflow automatically Mon–Fri at 16:00 Israel time — see `architecture.md` for why that's external rather than GitHub's native `schedule` trigger.
 
 First run per symbol does a one-time backfill (~2-3 years of daily bars via Yahoo Finance) into `data/bars.db` (SQLite); every run after that only fetches the bars missing since the last stored date (usually just the latest one).
-
-## Automation (GitHub Actions)
-
-`.github/workflows/scan.yml` runs the scan Monday–Friday at 16:00 Israel time and commits the updated `data/bars.db` back to the repo, so the persisted history travels with the repo across runs. It also accepts a `dry_run` input (skips Telegram + the data commit) for manual debugging runs. See `architecture.md` for how it handles Israel's daylight-saving switch.
 
 ## What it computes
 
@@ -47,9 +35,21 @@ Stocks are grouped into sections:
 
 See `architecture.md` for the full technical reference, including why a 5-trading-day lookback replaced the original single-bar magnitude thresholds.
 
-## Legacy TradingView/CDP scanner
+## Legacy TradingView/CDP scanner (local only)
 
-`legacy/scan_watchlist.js` is the original scanner, driving TradingView Desktop directly via Chrome DevTools Protocol. It's kept only for locally cross-checking `lib/indicators.js` against the live Pine indicator — not part of the automated pipeline. Requires TradingView Desktop running with `--remote-debugging-port=9222` and both indicators visible on a 1D chart:
+`legacy/scan_watchlist.js` is the original scanner, driving TradingView Desktop directly via Chrome DevTools Protocol. It's kept only for locally cross-checking `lib/indicators.js` against the live Pine indicator — not part of the automated pipeline, and the only part of this repo you'd run locally. Requires TradingView Desktop running with `--remote-debugging-port=9222` and both indicators visible on a 1D chart:
+
+```bash
+npm install
+```
+
+Create `telegram.config.json` (gitignored — never commit real credentials) if you want this local run to post to Telegram too:
+```json
+{
+  "botToken": "YOUR_BOT_TOKEN",
+  "chatId": "YOUR_CHAT_ID"
+}
+```
 
 ```bash
 node legacy/scan_watchlist.js
