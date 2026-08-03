@@ -119,7 +119,7 @@ Rows are keyed on `(date, symbol, signal)` and existing keys are skipped, so a r
 
 ## Telegram Report Format
 
-The message carries no title or date line — it opens directly on the first populated section. Note this means the report does not state which session it covers: since the scan is dispatched pre-open, that is normally the *previous* session (a Monday run reports on Friday). Deliberate, to keep the message short.
+The message carries no title or date line — it opens directly on the first populated section. It always arrives pre-market on a weekday and always summarizes the last completed session (so a Monday message covers Friday), which makes the session unambiguous from context; a date line would only add noise. Don't "fix" this by adding one.
 
 ```
 *🎯 ATR Reclaim (Bullish Confluence):*
