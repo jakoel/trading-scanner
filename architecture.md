@@ -119,11 +119,9 @@ Rows are keyed on `(date, symbol, signal)` and existing keys are skipped, so a r
 
 ## Telegram Report Format
 
-The header names the trading session the report covers, taken from the newest bar date rather than the clock. Because the scan is dispatched pre-open, that is normally the *previous* session — a Monday run reports on Friday — and without the header the reader would reasonably assume otherwise.
+The message carries no title or date line — it opens directly on the first populated section. Note this means the report does not state which session it covers: since the scan is dispatched pre-open, that is normally the *previous* session (a Monday run reports on Friday). Deliberate, to keep the message short.
 
 ```
-*Watchlist Scan* — session of Fri 31 Jul
-
 *🎯 ATR Reclaim (Bullish Confluence):*
 *SYMBOL* $price (+x.x%)
   _just reclaimed ATR, above EMA200_
