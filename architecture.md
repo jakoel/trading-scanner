@@ -66,6 +66,12 @@ The guard is expressed as "has this session closed?" rather than "is this today?
 
 The 10-day trailing re-fetch in step 3 exists because the old "fetch only after `lastDate`" logic could never correct a bar once written. It also picks up Yahoo's post-close volume revisions, which are common in the first days after a session.
 
+### Split detection (`isRebased()`)
+
+Yahoo retroactively re-adjusts a symbol's **entire** price history when it splits, so stored bars stop sharing a price basis with newly fetched ones. Upserting the re-fetch window can't repair that — the bars *outside* the window are the ones now on the wrong basis, leaving a fake discontinuity that reads as a genuine crash rather than an error. Simulated on AAPL, a 2:1 split inverts `Trend`, drops RSI from 43 to 20 and swings the MACD line from +6.9 to −38.2, and would persist for ~200 trading days until the stale bars age out.
+
+The trailing re-fetch window overlaps stored bars, which is what makes this detectable without a split calendar: if a bar already held comes back with a close differing by more than `REBASE_TOLERANCE` (2%), the symbol's rows are dropped and fully re-backfilled. The tolerance clears float/vendor noise while sitting far below the smallest split ratio in common use (5:4 = 25%).
+
 Migrated from the original one-CSV-per-symbol layout (`data/bars/<SYMBOL>.csv`) to cut down on repo file sprawl (67 files → 1) and get indexed queries instead of hand-parsed CSV.
 
 No indicator state is cached — every run recomputes RSI/MACD/EMA/ATR/ADX fresh from the full stored OHLCV array (~500-800 rows, sub-10ms). Only raw price/volume history persists.
@@ -113,8 +119,10 @@ Rows are keyed on `(date, symbol, signal)` and existing keys are skipped, so a r
 
 ## Telegram Report Format
 
+The header names the trading session the report covers, taken from the newest bar date rather than the clock. Because the scan is dispatched pre-open, that is normally the *previous* session — a Monday run reports on Friday — and without the header the reader would reasonably assume otherwise.
+
 ```
-*Watchlist Scan*
+*Watchlist Scan* — session of Fri 31 Jul
 
 *🎯 ATR Reclaim (Bullish Confluence):*
 *SYMBOL* $price (+x.x%)
