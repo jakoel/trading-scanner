@@ -1,6 +1,6 @@
 # Watchlist Scanner — Claude Instructions
 
-Headless Node.js watchlist scanner. No TradingView Desktop, no CDP, no GUI required — runs standalone or via GitHub Actions, triggered Mon–Fri at 16:00 Israel time by an external scheduler calling `workflow_dispatch` (GitHub's native `schedule` trigger proved unreliable — see architecture.md).
+Headless Node.js watchlist scanner. No TradingView Desktop, no CDP, no GUI required — runs standalone or via GitHub Actions, triggered Mon–Fri at 15:05 Israel time by an external scheduler calling `workflow_dispatch` (GitHub's native `schedule` trigger proved unreliable — see architecture.md).
 
 ## Before touching this project
 
@@ -34,7 +34,7 @@ Prints the report to stdout instead of posting it — bar data and `data/signals
 | `telegram.js` | `sendMessage(text)` — Telegram Bot API wrapper |
 | `watchlist.txt` | Symbols to scan, one per line (`#` = comment) |
 | `telegram.config.json` | `{ "botToken": "...", "chatId": "..." }` |
-| `.github/workflows/scan.yml` | `workflow_dispatch`-only trigger (fired daily by an external scheduler, Mon–Fri 16:00 Israel time), runs the scan, commits updated `data/bars.db` |
+| `.github/workflows/scan.yml` | `workflow_dispatch`-only trigger (fired daily by an external scheduler, Mon–Fri 15:05 Israel time), runs the scan, commits updated `data/bars.db` |
 | `architecture.md` | Full technical reference |
 | `legacy/` | Original TradingView/CDP-based scanner — kept for local cross-checking against the live indicator, not used by automation. See `legacy/README` note in architecture.md. |
 | `reference/` | Raw Pine source (`macd.txt`, `indicatorSuite.txt`) that `lib/indicators.js` was ported from |

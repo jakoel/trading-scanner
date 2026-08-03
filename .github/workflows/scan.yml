@@ -5,7 +5,7 @@ name: Watchlist Scan
 # days (schedule events are best-effort and can be delayed or dropped,
 # especially for low-activity repos). The real trigger now lives outside
 # GitHub: an external scheduler (cron-job.org) calls the REST API to fire
-# `workflow_dispatch` at 16:00 Israel time daily, which runs on-demand with
+# `workflow_dispatch` at 15:05 Israel time daily, which runs on-demand with
 # no queueing. See architecture.md for the exact setup.
 #
 # The external scheduler's POST body never sets `dry_run`, so it always

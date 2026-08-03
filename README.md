@@ -16,7 +16,7 @@ Edit `watchlist.txt` (one ticker per line) and push to `main`. To run the scan i
 - Leave **Dry run** unchecked for a real run — sends the Telegram report and commits updated bar data (`data/bars.db`) back to the repo.
 - Check **Dry run** to print the report to the workflow's job log instead — skips Telegram and skips the data commit, safe to trigger repeatedly while testing.
 
-In production, an external scheduler (cron-job.org) fires this same workflow automatically Mon–Fri at 16:00 Israel time — see `architecture.md` for why that's external rather than GitHub's native `schedule` trigger.
+In production, an external scheduler (cron-job.org) fires this same workflow automatically Mon–Fri at 15:05 Israel time — see `architecture.md` for why that's external rather than GitHub's native `schedule` trigger.
 
 First run per symbol does a one-time backfill (~2-3 years of daily bars via Yahoo Finance) into `data/bars.db` (SQLite); every run after that only fetches the bars missing since the last stored date (usually just the latest one).
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Headless Node.js scanner — no TradingView Desktop, no CDP, no browser. Pulls daily OHLCV per symbol from Yahoo Finance (persisted incrementally in `data/bars.db`, a SQLite file), recomputes the full indicator suite locally, detects MACD signals over a lookback window, and sends a formatted report to Telegram. Runs Mon-Fri at 16:00 Israel time via GitHub Actions, triggered by an external scheduler (see "Triggering the Daily Run" below) rather than GitHub's native cron.
+Headless Node.js scanner — no TradingView Desktop, no CDP, no browser. Pulls daily OHLCV per symbol from Yahoo Finance (persisted incrementally in `data/bars.db`, a SQLite file), recomputes the full indicator suite locally, detects MACD signals over a lookback window, and sends a formatted report to Telegram. Runs Mon-Fri at 15:05 Israel time via GitHub Actions, triggered by an external scheduler (see "Triggering the Daily Run" below) rather than GitHub's native cron.
 
 ```
 External scheduler (cron-job.org) ──POST workflow_dispatch──> GitHub Actions
@@ -51,12 +51,22 @@ watchlist-summary/
 
 All symbols share a single SQLite file, `data/bars.db`, opened via Node's built-in `node:sqlite` (`DatabaseSync`) — no native dependency, but it's an experimental Node API (stable without a flag since Node 22.5; the workflow and any local run need Node ≥22). One table: `bars(symbol, date, open, high, low, close, volume)`, primary key `(symbol, date)`. On each run, per symbol:
 1. Query the last stored date for that symbol.
-2. If that's already today, skip the fetch entirely.
-3. Otherwise fetch only bars *after* that date from Yahoo Finance (normally just the latest 1 bar).
+2. If that's already the last *closed* session (see below), skip the fetch entirely.
+3. Otherwise re-fetch a 10-day trailing window ending at the cutoff, not just bars after the last stored date.
 4. If no rows exist yet for the symbol, do one full backfill (~750 calendar days, matching the Pine script's `max_bars_back=500`).
 5. Upsert fetched rows (`ON CONFLICT DO UPDATE`), then delete all but the most recent 400 rows for that symbol.
 
-Migrated from the original one-CSV-per-symbol layout (`data/bars/<SYMBOL>.csv`) to cut down on repo file sprawl (67 files → 1) and get indexed queries instead of hand-parsed CSV. `V` (Visa) appearing twice in `watchlist.txt` now shares one row set for `symbol = 'V'`, same as before.
+### Only completed sessions are stored
+
+`lastClosedSessionDate()` returns the newest date whose US regular session (09:30–16:00 ET) has finished, and any fetched bar newer than that is discarded.
+
+This matters because **Yahoo starts building the daily candle from pre-market trades**. The scan is dispatched pre-open (15:05 Israel; the US opens 16:30 Israel, or 15:30 during the few weeks a year when US DST is active and Israel's is not), so without this guard every run stored a partial bar for the current day — roughly a tenth of the day's volume and a pre-market print as the close. A pre-open run therefore reports on the **previous** completed session, which is the intent.
+
+The guard is expressed as "has this session closed?" rather than "is this today?" so it also holds for a delayed dispatch, a mid-session manual run, and an after-close run (which correctly picks up that day's finished bar).
+
+The 10-day trailing re-fetch in step 3 exists because the old "fetch only after `lastDate`" logic could never correct a bar once written. It also picks up Yahoo's post-close volume revisions, which are common in the first days after a session.
+
+Migrated from the original one-CSV-per-symbol layout (`data/bars/<SYMBOL>.csv`) to cut down on repo file sprawl (67 files → 1) and get indexed queries instead of hand-parsed CSV.
 
 No indicator state is cached — every run recomputes RSI/MACD/EMA/ATR/ADX fresh from the full stored OHLCV array (~500-800 rows, sub-10ms). Only raw price/volume history persists.
 
@@ -67,8 +77,9 @@ A pure function, `computeIndicators(bars)`, ported from `reference/indicatorSuit
 Key implementation notes:
 - **EMA(12)/EMA(26) → MACD line, EMA(9) signal, histogram** — matches `indicatorSuite.txt`'s `ta.ema(macdLine, signalSmoothing)`. Note this differs from `CM_MacD_Ult_MTF` (`reference/macd.txt`), which uses an **SMA** signal — the two indicators' histograms diverge slightly near zero-crossing points. `lib/indicators.js` follows the EMA-signal version since that's the actual production indicator whose table (RSI/Histogram/Trend/Score/etc.) this scanner reports on.
 - **RSI, ATR, ADX/DMI** — Wilder's RMA smoothing (`rma()`), not SMA — matches Pine's `ta.rsi`/`ta.atr`/`ta.dmi` builtins.
+- **EMA seeding** — `ema()` stays `null` until `length` values exist, then seeds the recursion with the SMA of those values, matching Pine's `ta.ema`. Seeding with the first value instead leaves a seed-error residue that decays too slowly to disappear within the 400-bar retained window (~2% of it survives for a 200-length EMA), which showed up as a median 0.48% EMA200 discrepancy, worst case 2.6% — enough to flip `priceAboveEMA`, worth 2 of the 8 confluence points, for any symbol near its EMA200.
 - **HTF Trend** — not computed separately. The Pine script's higher-timeframe input defaults to `"D"` and this always runs on daily bars already, so `HTF Trend` is always identical to `Trend (EMA)` in this configuration (confirmed against live scrapes).
-- **Pivot-based divergence** (`ta.pivothigh`/`ta.pivotlow`, lookback 14) — a pivot can only be confirmed once 14 *newer* bars exist past it, so "today" is never a confirmed pivot. Same lag as in Pine; not a bug.
+- **Pivot-based divergence** (`ta.pivothigh`/`ta.pivotlow`, lookback 14) — a pivot can only be confirmed once 14 *newer* bars exist past it. Like Pine, `pivotHigh`/`pivotLow` therefore report the pivot's value at the **confirmation bar**, 14 bars after the pivot itself — so today's bar *can* carry a divergence flag (confirming a pivot from 14 bars ago), and the `highs[i - divLookback]` / `lows[i - divLookback]` lookups in the histogram-divergence block line up with it. Indexing the pivot at its own bar instead is wrong twice over: it leaks lookahead, and since the report only ever reads the newest bar it puts every pivot permanently out of reach, making divergence and the `⚠ TOP/BOTTOM FORMING` warnings unreachable dead code.
 - **ATR Trailing Stop** — sequential, stateful per-bar loop (`indicatorSuite.txt:371-403`), not a simple formula — ports directly.
 - **Confluence score, confirmation bars, signal cooldown** — pure bar-index bookkeeping, ports directly.
 
@@ -96,7 +107,9 @@ The ATR Reclaim signal originally used a static "within 3% above the ATR line" p
 
 ## Historical Signal Log (`lib/signalLog.js`)
 
-Every run appends one row per fired signal to `data/signals.csv` — `date,symbol,signal,price,atr,ema200,rsi`, where `signal` is one of `ATR RECLAIM`, `MACD TURNED GREEN`, `MACD TURNED POSITIVE`, `RSI RECLAIMED 30`, `VOLUME SURGE`. Note `VOLUME SURGE` is a state signal, so it can log the same symbol on consecutive days while volume stays elevated — every other signal here logs only once per event. `date` is the bar's actual trading date (from `lib/indicators.js`'s row), not the run's wall-clock date, so a late/manual run still logs against the correct day. Unlike `data/bars.db`, this file is append-only and never trimmed — it's a growing record for later research into which signals actually worked (e.g. cross-referencing against `data/bars.db` price history N days later).
+Every run appends one row per newly fired signal to `data/signals.csv` — `date,symbol,signal,price,atr,ema200,rsi`, where `signal` is one of `ATR RECLAIM`, `MACD TURNED GREEN`, `MACD TURNED POSITIVE`, `RSI RECLAIMED 30`, `VOLUME SURGE`. Note `VOLUME SURGE` is a state signal, so it can log the same symbol on consecutive days while volume stays elevated — every other signal here logs only once per event. `date` is the bar's actual trading date (from `lib/indicators.js`'s row), not the run's wall-clock date, so a late/manual run still logs against the correct day. Unlike `data/bars.db`, this file is append-only and never trimmed — it's a growing record for later research into which signals actually worked (e.g. cross-referencing against `data/bars.db` price history N days later).
+
+Rows are keyed on `(date, symbol, signal)` and existing keys are skipped, so a re-run on the same trading day — a manual scan, a retried dispatch — can't append a second copy of a signal already logged and double-count it in that research. The key deliberately excludes price/RSI, which can shift slightly between two runs against the same bar.
 
 ## Telegram Report Format
 
@@ -130,7 +143,7 @@ Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
 
 `.github/workflows/scan.yml` only declares `workflow_dispatch` — there is no native GitHub Actions `schedule` trigger. That's deliberate: `schedule` events are best-effort and this repo saw them both fire hours late (skipping the actual scan once a hand-rolled hour guard caught the mismatch) and not fire at all on other days, even after moving the cron off the top of the hour. GitHub Actions' scheduler is simply not reliable enough for a "same time every day" requirement here.
 
-Instead, an **external scheduler calls the GitHub REST API to fire `workflow_dispatch`** at 16:00 Israel time, Mon-Fri:
+Instead, an **external scheduler calls the GitHub REST API to fire `workflow_dispatch`** at 15:05 Israel time, Mon-Fri:
 
 ```
 POST https://api.github.com/repos/jakoel/trading-scanner/actions/workflows/scan.yml/dispatches
@@ -141,7 +154,7 @@ Content-Type: application/json
 { "ref": "main" }
 ```
 
-Set up with e.g. [cron-job.org](https://cron-job.org) (free): create a job hitting the URL above with those headers/body, scheduled for 16:00 with the **time zone explicitly set to `Asia/Jerusalem`** (not a fixed UTC offset) so DST is handled by the scheduler itself — no need to juggle two UTC crons the way the old `schedule:` block did. The PAT lives only in the external scheduler's job config, never committed to this repo.
+Set up with e.g. [cron-job.org](https://cron-job.org) (free): create a job hitting the URL above with those headers/body, scheduled for 15:05 with the **time zone explicitly set to `Asia/Jerusalem`** (not a fixed UTC offset) so DST is handled by the scheduler itself — no need to juggle two UTC crons the way the old `schedule:` block did. The PAT lives only in the external scheduler's job config, never committed to this repo.
 
 `workflow_dispatch` runs on-demand — no queueing, so no analogue of the schedule delays observed above. The workflow has no day-level de-duplication, so keep the external job to once/day; running it twice in the same day would re-send Telegram alerts for the same signals since the daily bar hasn't changed yet.
 
