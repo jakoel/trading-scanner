@@ -148,11 +148,11 @@ Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
 Every line printed for an ETF gets a trailing ` · sector` tag, from `SECTOR_LABELS` in `lib/report.js`:
 
 ```
-*BOTZ* $34.12 (+5.0%) · robotics & automation
-*XBI* $88.40 (RSI 31.20) · biotech
+*BOTZ* $34.12 (+5.0%) · Robotics & Automation ETF
+*XBI* $88.40 (RSI 31.20) · Biotech ETF
 ```
 
-A ticker like BOTZ or COPX means nothing to a reader who doesn't already hold it, so the report says what it tracks. Individual stocks are deliberately **not** labelled — their tickers are the company names, and tagging all 81 would bury the signal rather than add to it.
+A ticker like BOTZ or COPX means nothing to a reader who doesn't already hold it, so the report says what it tracks — and names it as an ETF, so a reader doesn't mistake it for a single company. Individual stocks are deliberately **not** labelled — their tickers are the company names, and tagging all 81 would bury the signal rather than add to it.
 
 Labels must not contain Telegram's legacy-Markdown metacharacters (`*`, `_`, `` ` ``, `[`). The API rejects a message with unbalanced markup outright, so one stray underscore in a label kills the whole report rather than just rendering oddly. Adding a new ETF to `watchlist.txt` without adding it here is harmless — `sectorTag()` returns an empty string for anything unlabelled.
 
