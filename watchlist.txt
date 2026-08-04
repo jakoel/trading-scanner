@@ -79,3 +79,26 @@ XYZ
 PYPL
 CEG
 BE
+
+# --- Sector / thematic ETFs ---
+# Group-level trend reads on themes the single names above don't cover.
+# Robotics & industrial automation (adds Keyence, Fanuc, ABB, Yaskawa)
+BOTZ
+# Cybersecurity — sector regime read across CRWD/PANW/ZS/FTNT/OKTA
+CIBR
+# Quantum computing & next-gen compute
+QTUM
+# Uranium miners & nuclear fuel — complements UUUU, CEG, GEV
+URA
+# Smart grid & electrification — the AI power buildout (Eaton, Quanta, Schneider)
+GRID
+# Copper miners — the physical bottleneck for electrification
+COPX
+# Solar — complements the storage/fuel-cell names (EOSE, QS, BE)
+TAN
+# Small-cap biotech — rate-sensitive, distinct from the mega-cap pharma above
+XBI
+# Aerospace & defense primes — complements LMT, AVAV, RKLB
+ITA
+# Gold miners — the one sector here uncorrelated to the rest of the list
+GDX
