@@ -143,6 +143,19 @@ The message carries no title or date line — it opens directly on the first pop
 
 Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
 
+### Sector labels on ETFs
+
+Every line printed for an ETF gets a trailing ` · sector` tag, from `SECTOR_LABELS` in `lib/report.js`:
+
+```
+*BOTZ* $34.12 (+5.0%) · robotics & automation
+*XBI* $88.40 (RSI 31.20) · biotech
+```
+
+A ticker like BOTZ or COPX means nothing to a reader who doesn't already hold it, so the report says what it tracks. Individual stocks are deliberately **not** labelled — their tickers are the company names, and tagging all 81 would bury the signal rather than add to it.
+
+Labels must not contain Telegram's legacy-Markdown metacharacters (`*`, `_`, `` ` ``, `[`). The API rejects a message with unbalanced markup outright, so one stray underscore in a label kills the whole report rather than just rendering oddly. Adding a new ETF to `watchlist.txt` without adding it here is harmless — `sectorTag()` returns an empty string for anything unlabelled.
+
 **Testing/dry runs:** `node scan_headless.js --dry-run` prints the would-be report to stdout instead of calling `sendMessage()`. Bar data (`data/bars.db`) and the signal log (`data/signals.csv`) still update normally — only the Telegram send is skipped. Always use this when verifying new or changed signal logic; the live channel has real subscribers and a stray test post is noisy for them.
 
 ## Triggering the Daily Run
