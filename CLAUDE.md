@@ -30,7 +30,7 @@ Prints the report to stdout instead of posting it — bar data and `data/signals
 | `scan_headless.js` | Entry point: pulls bars, computes indicators, detects signals, sends the report |
 | `lib/bars.js` | Persisted OHLCV in `data/bars.db` (SQLite), incrementally fetched via Yahoo Finance |
 | `lib/indicators.js` | Pure reimplementation of the Pine indicator (`reference/indicatorSuite.txt`) — RSI, MACD, ATR, ADX, divergence, confluence score, ATR trailing stop |
-| `lib/report.js` | Shared signal detection (5-day lookback crossovers) + Telegram formatting, used by both scanners |
+| `lib/report.js` | Shared signal detection (same-day crossovers only — see architecture.md before widening any lookback) + Telegram formatting, used by both scanners |
 | `telegram.js` | `sendMessage(text)` — Telegram Bot API wrapper |
 | `watchlist.txt` | Symbols to scan, one per line (`#` = comment) |
 | `telegram.config.json` | `{ "botToken": "...", "chatId": "..." }` |

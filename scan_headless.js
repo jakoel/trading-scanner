@@ -14,7 +14,7 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { sendMessage } from './telegram.js';
-import { updateBars } from './lib/bars.js';
+import { updateBars, latestStoredSessionDate } from './lib/bars.js';
 import { computeIndicators } from './lib/indicators.js';
 import { detectMacdSignals, detectAtrReclaim, detectRsiSignals, detectVolumeSignals, generateSummary, formatTelegramMessages } from './lib/report.js';
 import { logSignals } from './lib/signalLog.js';
@@ -31,6 +31,15 @@ const dryRun = process.argv.includes('--dry-run');
 
 async function main() {
   console.log(`Scanning ${watchlist.length} symbols...`);
+
+  // Captured before any fetch, so it names the session the *previous* run
+  // reported on. On 2026-08-04 the scan re-reported the 2026-07-31 bar because
+  // the 08-03 session never made it into bars.db: the whole +3.24%, 78-of-91
+  // advancer session went unscanned and subscribers got a silent re-send of
+  // Friday's report, with no way to tell (the message is deliberately
+  // dateless). Whatever the upstream cause, a run that lands on a session
+  // already reported has nothing new to say and must not post.
+  const previousSession = latestStoredSessionDate();
 
   const results = [];
 
@@ -89,9 +98,28 @@ async function main() {
   if (results.length > 0) {
     logSignals(results);
 
+    // The newest bar any symbol reached — a symbol lagging a day (a halt, a
+    // late listing) shouldn't drag the whole run's session backwards.
+    const session = results.map(r => r.date).filter(Boolean).sort().pop();
+    const stale = previousSession != null && session != null && session <= previousSession;
+
     const msgs = formatTelegramMessages(results);
     if (msgs.length === 0) {
       console.log('\nNo buys or MACD signals — skipping Telegram.');
+    } else if (stale) {
+      // ::warning:: surfaces this on the Actions run page without failing the
+      // job, so the bar-data commit still happens (the run may well have
+      // repaired older bars) while the anomaly stops being invisible.
+      console.log(`::warning::Stale scan — latest completed session is still ${session}, already reported by the previous run. Telegram send skipped.`);
+      console.log(`\n⚠ STALE: newest session is ${session}, same as the previous run. Not sending.`);
+      if (dryRun) {
+        console.log('\n[DRY RUN] Report that would have been suppressed:\n');
+        for (const msg of msgs) {
+          console.log('---');
+          console.log(msg);
+        }
+        console.log('---');
+      }
     } else if (dryRun) {
       console.log(`\n[DRY RUN] Would send ${msgs.length} Telegram message(s):\n`);
       for (const msg of msgs) {
