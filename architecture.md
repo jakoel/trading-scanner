@@ -140,25 +140,27 @@ The guard is on the symptom, not the cause — whatever makes a run land on an a
 
 The message carries no title or date line — it opens directly on the first populated section. It always arrives pre-market on a weekday and always summarizes the last completed session (so a Monday message covers Friday), which makes the session unambiguous from context; a date line would only add noise. Don't "fix" this by adding one.
 
+Sections always render in this order — the two strongest, most actionable reads first, then the momentum shifts, then the oversold bounce:
+
 ```
 *🎯 ATR Reclaim (Bullish Confluence):*
 *SYMBOL* $price
   _above EMA200_
 
-⚡ MACD Turned Green:
-*ZETA* $12.50
+📊 Volume Surge:
+*SYMBOL* $price (N.NNx avg vol)
 
-⚡ MACD Turned Positive:
+⚡ MACD Turned Positive (Confirmed Positive Momentum):
 *MSFT* $390.00
+
+⚡ MACD Turned Green (Early Bottom, MACD Still Negative):
+*ZETA* $12.50
 
 📈 RSI Reclaimed 30 (Out of Oversold):
 *SYMBOL* $price (RSI xx.xx)
+```
 
-📊 Volume Surge:
-*SYMBOL* $price (N.NNx avg vol)
-```
-```
-```
+Empty sections are skipped entirely, so the message opens on whichever of these is first populated. Within a section, symbols are sorted alphabetically (see `formatTelegramMessages()`), so a symbol keeps its position from one day's message to the next.
 
 Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
 
