@@ -142,8 +142,8 @@ The message carries no title or date line — it opens directly on the first pop
 
 ```
 *🎯 ATR Reclaim (Bullish Confluence):*
-*SYMBOL* $price (+x.x%)
-  _just reclaimed ATR, above EMA200_
+*SYMBOL* $price
+  _above EMA200_
 
 ⚡ MACD Turned Green:
 *ZETA* $12.50
@@ -162,12 +162,20 @@ The message carries no title or date line — it opens directly on the first pop
 
 Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
 
+### ATR Reclaim lines carry no distance-to-stop figure
+
+They used to print `(price − atrTrailingStop) / atrTrailingStop` as a percentage. It looks like performance and isn't: the ATR Trailing Stop flips sides on a reclaim, resetting to `low − 3 × ATR(10)` on the very bar the signal fires, so the gap is always one fresh full stop-width. The number therefore only ever reported how wide that symbol's ATR band is. On 2026-08-05, MRVL printed `+37.0%` against GDX's `+16.3%` — not because MRVL's reclaim was stronger but because MRVL is more volatile, and MRVL in fact closed *down* 3.5% that day. BE printed `+70.1%` off a stop that had just reset from 268.52 to 137.73.
+
+The stop level itself is real and reconciles exactly to the Pine formula, but it isn't shown either — verified for BE/MRVL/GDX against `low − 3 × ATR(10)` with `atrLength = 10`, `atrMultiplier = 3.0` (`reference/indicatorSuite.txt:53-54`). Two properties make it a poor thing to put in a headline: it's at its widest on exactly the bar the report prints it (from the next bar it ratchets up via `max(prevStop, close − 3×ATR)` and never loosens), and it's anchored to the day's low rather than the close.
+
+Don't reintroduce either figure. Note this leaves the `just reclaimed ATR` and `close to ATR flip` branches in `generateSummary()` unreachable for this section — an ATR Reclaim entry is by definition a full stop-width above its stop, never within 3% of it.
+
 ### Sector labels on ETFs
 
 Every line printed for an ETF gets a trailing ` · sector` tag, from `SECTOR_LABELS` in `lib/report.js`:
 
 ```
-*BOTZ* $34.12 (+5.0%) · Robotics & Automation ETF
+*BOTZ* $34.12 · Robotics & Automation ETF
 *XBI* $88.40 (RSI 31.20) · Biotech ETF
 ```
 
