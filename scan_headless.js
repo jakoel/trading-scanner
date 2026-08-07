@@ -58,7 +58,6 @@ async function main() {
       const atr = Math.round(last.atrTrailingStop * 100) / 100;
       const ema200 = last.ema200 ? Math.round(last.ema200 * 100) / 100 : null;
       const rsi = last.rsi != null ? last.rsi.toFixed(2) : '—';
-      const macdHist = last.histogram != null ? last.histogram.toFixed(4) : '—';
       const macdLineVal = last.macdLine;
 
       // Chronological (oldest-first) history for the last 7 trading days,
@@ -75,15 +74,18 @@ async function main() {
 
       const summary = generateSummary({
         price, atr, ema200, rsi,
-        trend: last.trend, htfTrend: last.htfTrend,
-        momentum: last.momentum, divergence: last.divergence, volume: last.volume,
+        trend: last.trend, htfTrend: last.htfTrend, divergence: last.divergence,
       });
 
+      // `trend` feeds the console line, `htfTrend` the ATR Reclaim gate in
+      // isAtrReclaim(), `volumeRatio` the Volume Surge report line. The
+      // indicator's remaining table cells (adx/score/signal/warning/momentum/
+      // volume) stay on the computeIndicators() row — the validated mirror of
+      // the TradingView table — and are deliberately not copied here.
       const entry = {
-        symbol, date: last.date, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo, rsiSignals,
+        symbol, date: last.date, price, atr, ema200, rsi, macdSignals, atrReclaimDaysAgo, rsiSignals,
         volumeSignals, volumeRatio: last.volumeRatio,
-        trend: last.trend, htfTrend: last.htfTrend, momentum: last.momentum,
-        divergence: last.divergence, volume: last.volume, summary,
+        trend: last.trend, htfTrend: last.htfTrend, summary,
       };
       results.push(entry);
 
