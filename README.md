@@ -28,8 +28,8 @@ For each symbol, `lib/indicators.js` reproduces the full indicator suite from th
 
 Stocks are grouped into sections:
 - **🎯 ATR Reclaim (Bullish Confluence)** — price crossed from at/below the ATR Trailing Stop to above it within the last 5 trading days, still above it today, above EMA200, bullish HTF trend
-- **⚡ MACD Turned Green** — histogram crossed from negative to positive within the last 5 trading days (early signal if the MACD line is still negative, continuation signal if it's already positive)
-- **⚡ MACD Turned Positive** — the MACD line itself crossed zero within the last 5 trading days (a more mature momentum confirmation)
+- **⚡ MACD Turned Green** — histogram crossed from negative to positive on today's bar while the MACD line is still negative (the early-bottom case)
+- **⚡ MACD Turned Positive** — the MACD line itself crossed zero on today's bar *and* the histogram is positive (a more mature momentum confirmation)
 - **📈 RSI Reclaimed 30** — RSI crossed back above 30 on today's bar only
 - **📊 Volume Surge** — today's volume ≥1.5x its 20-day average on an up day (fires every day it stays elevated, not just once)
 
