@@ -31,7 +31,7 @@ Stocks are grouped into sections:
 - **⚡ MACD Turned Green** — histogram crossed from negative to positive on today's bar while the MACD line is still negative (the early-bottom case)
 - **⚡ MACD Turned Positive** — the MACD line itself crossed zero on today's bar *and* the histogram is positive (a more mature momentum confirmation)
 - **📈 RSI Reclaimed 30** — RSI crossed back above 30 on today's bar only
-- **📊 Volume Surge** — today's volume ≥1.5x its 20-day average on an up day (fires every day it stays elevated, not just once)
+- **📊 Volume Surge** — today's volume ≥1.75x its 20-day average on an up day (fires every day it stays elevated, not just once)
 
 See `architecture.md` for the full technical reference, including why a 5-trading-day lookback replaced the original single-bar magnitude thresholds.
 
