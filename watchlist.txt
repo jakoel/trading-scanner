@@ -102,3 +102,7 @@ XBI
 ITA
 # Gold miners — the one sector here uncorrelated to the rest of the list
 GDX
+# S&P 500
+SPY 
+# NASDAQ
+QQQ
