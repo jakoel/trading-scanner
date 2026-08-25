@@ -102,6 +102,18 @@ XBI
 ITA
 # Gold miners — the one sector here uncorrelated to the rest of the list
 GDX
+# Broad semiconductors — regime read across NVDA/AMD/AVGO/TSM/MU/MRVL/QCOM
+SMH
+# Spot Bitcoin — pairs with ETHA for full crypto coverage
+IBIT
+# Traditional energy — broader than single-name XOM
+XLE
+# Software — sector regime for CRM/NOW/DDOG/NET/S/OKTA, mirrors CIBR for security
+IGV
+# Silver — precious-metals complement to GDX (miners only)
+SLV
+# Long-duration Treasuries — rate/risk-off diversifier, only non-equity holding
+TLT
 # S&P 500
 SPY 
 # NASDAQ
