@@ -114,6 +114,16 @@ IGV
 SLV
 # Long-duration Treasuries — rate/risk-off diversifier, only non-equity holding
 TLT
+# Nuclear power complex — reactors, utilities, SMR developers, complements URA
+NLR
+# Space economy — satellites and launch, no prior exposure
+UFO
+# Rare earth & strategic metals — sector read complementing MP/UUUU/USAR
+REMX
+# Lithium & battery tech — sector read complementing EOSE/QS/BE
+LIT
+# Fintech — sector read complementing XYZ/PYPL/COIN/SOFI
+FINX
 # S&P 500
 SPY 
 # NASDAQ
