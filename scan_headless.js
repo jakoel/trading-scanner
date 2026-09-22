@@ -16,7 +16,7 @@ import { dirname, join } from 'path';
 import { sendMessage } from './telegram.js';
 import { updateBars, latestStoredSessionDate } from './lib/bars.js';
 import { computeIndicators } from './lib/indicators.js';
-import { detectMacdSignals, detectAtrReclaim, detectRsiSignals, detectVolumeSignals, generateSummary, formatTelegramMessages } from './lib/report.js';
+import { detectMacdSignals, detectRsiSignals, detectVolumeSignals, generateSummary, formatTelegramMessages } from './lib/report.js';
 import { logSignals } from './lib/signalLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -63,11 +63,9 @@ async function main() {
       // Chronological (oldest-first) history for the last 7 trading days,
       // matching the shape lib/report.js expects for crossover detection.
       const macdHistory = rows.slice(-7).map(r => ({ macd: r.macdLine, hist: r.histogram }));
-      const atrHistory = rows.slice(-7).map(r => ({ price: r.price, atr: r.atrTrailingStop }));
       const rsiHistory = rows.slice(-7).map(r => ({ rsi: r.rsi }));
 
       const { macdSignals } = detectMacdSignals(macdLineVal, macdHistory, { price: last.price, atrTrailingStop: last.atrTrailingStop });
-      const atrReclaimDaysAgo = detectAtrReclaim(atrHistory);
       const { rsiSignals } = detectRsiSignals(rsiHistory);
       const prevPrice = rows.length >= 2 ? rows[rows.length - 2].price : null;
       const { volumeSignals } = detectVolumeSignals({ volumeRatio: last.volumeRatio, price, prevPrice });
@@ -77,13 +75,13 @@ async function main() {
         trend: last.trend, htfTrend: last.htfTrend, divergence: last.divergence,
       });
 
-      // `trend` feeds the console line, `htfTrend` the ATR Reclaim gate in
-      // isAtrReclaim(), `volumeRatio` the Volume Surge report line. The
+      // `trend`/`htfTrend` feed the console line and generateSummary()'s mixed-
+      // trend annotation, `volumeRatio` the Volume Surge report line. The
       // indicator's remaining table cells (adx/score/signal/warning/momentum/
       // volume) stay on the computeIndicators() row — the validated mirror of
       // the TradingView table — and are deliberately not copied here.
       const entry = {
-        symbol, date: last.date, price, atr, ema200, rsi, macdSignals, atrReclaimDaysAgo, rsiSignals,
+        symbol, date: last.date, price, atr, ema200, rsi, macdSignals, rsiSignals,
         volumeSignals, volumeRatio: last.volumeRatio,
         trend: last.trend, htfTrend: last.htfTrend, summary,
       };

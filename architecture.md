@@ -93,13 +93,12 @@ Key implementation notes:
 
 Both scanners import this module, so behavior never drifts between the headless and legacy paths.
 
-**Every signal fires only on the bar its triggering event actually happened on** — all three lookback constants (`MACD_LOOKBACK_DAYS`, `ATR_LOOKBACK_DAYS`, `RSI_RECLAIM_LOOKBACK_DAYS`) are `1`. No persisted "already alerted" state is needed: the event is derived fresh each run from the bar history itself, and a crossover is only ever today's crossover.
+**Every signal fires only on the bar its triggering event actually happened on** — both remaining lookback constants (`MACD_LOOKBACK_DAYS`, `RSI_RECLAIM_LOOKBACK_DAYS`) are `1`. No persisted "already alerted" state is needed: the event is derived fresh each run from the bar history itself, and a crossover is only ever today's crossover.
 
-The MACD and ATR lookbacks were originally `5`, on the reasoning that a signal is still "recent/early" for a few days after the cross. In practice that turned one event into five consecutive reports of the same thing. Over the ten sessions to 2026-08-05, **65% of MACD TURNED GREEN lines and 47% of ATR RECLAIM lines were re-announcements** of an event already sent on an earlier day (average green run: 2.78 trading days), and the 2026-08-05 report named 56 of 91 watchlist symbols across 85 lines on a day the watchlist was *down* 0.37% with 36 advancers. It also polluted `data/signals.csv`, which keys rows on `(date, symbol, signal)` and so logged one crossover up to five times under five different dates — enough to skew any hit-rate research over that file. `signals.csv` is the record of what fired and when; the Telegram report is a feed of what happened today. Don't widen these back out.
+The MACD lookback (and, while it existed, the ATR Reclaim lookback) were originally `5`, on the reasoning that a signal is still "recent/early" for a few days after the cross. In practice that turned one event into five consecutive reports of the same thing. Over the ten sessions to 2026-08-05, **65% of MACD TURNED GREEN lines and 47% of ATR RECLAIM lines were re-announcements** of an event already sent on an earlier day (average green run: 2.78 trading days), and the 2026-08-05 report named 56 of 91 watchlist symbols across 85 lines on a day the watchlist was *down* 0.37% with 36 advancers. It also polluted `data/signals.csv`, which keys rows on `(date, symbol, signal)` and so logged one crossover up to five times under five different dates — enough to skew any hit-rate research over that file. `signals.csv` is the record of what fired and when; the Telegram report is a feed of what happened today. Don't widen these back out.
 
 | Signal | Condition |
 |--------|-----------|
-| 🎯 ATR Reclaim (Bullish Confluence) | `price` crossed from at/below the ATR Trailing Stop to above it on **today's bar** (`detectAtrReclaim()`), AND `price > ema200`, AND `htfTrend === 'BULLISH'`. Named for the mechanical event, not "buy" — the condition alone isn't a trade recommendation. |
 | ⚡ MACD TURNED GREEN | Histogram crossed from ≤0 to >0 on today's bar, **AND the MACD line is still negative**. The early-bottom case the section is named for. |
 | ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 on today's bar, **AND the histogram is positive** (line above its own signal line). A more mature momentum confirmation than TURNED GREEN. |
 | 📈 RSI RECLAIMED 30 | RSI crossed from ≤30 to >30 on today's bar (`detectRsiSignals()`) — fires once, the exact day it pops back out of oversold, not the day it dropped below 30 and not on subsequent days it happens to still be above 30. Telegram line includes the current RSI value. |
@@ -111,21 +110,39 @@ The two MACD signals are now mutually exclusive by construction: TURNED GREEN re
 
 **Why TURNED POSITIVE also requires price not be too extended above its ATR Trailing Stop.** TURNED POSITIVE is a lagging confirmation — by the time the MACD line crosses zero, price has usually already reclaimed its ATR Trailing Stop days or weeks earlier, so the gap between price and that stop at cross time tells you whether you're catching the move early or chasing an already-stretched one. Recomputing `lib/indicators.js` over the full `data/bars.db` history for the 26 TURNED POSITIVE events since 2026-08-20 and splitting on `(price - atrTrailingStop) / atrTrailingStop` at cross time: the 12 nearest their stop averaged **+0.05%** at 5 sessions (56% win), while the 12 furthest (gap up to 37%) averaged **−5.52%** (30% win) at 5 sessions and −4.40% (20% win) at 10. `MACD_POSITIVE_MAX_ATR_EXTENSION_PCT` (15) in `lib/report.js` gates on this — provisional, not tuned, and worth re-checking once more sessions accumulate past 2026-08-20.
 
-**MACD Green + Volume Surge confluence section.** Same-day `MACD TURNED GREEN` + `VOLUME SURGE` (from `data/signals.csv`, 4 occurrences since 2026-08-06) averaged +9.1% at 10 sessions, 100% win — well above either signal alone. `formatTelegramMessages()` breaks these out into their own `🔥 MACD Green + Volume Surge (Confluence)` section, ordered right after ATR Reclaim since it's currently the strongest read found. Symbols in this section still also appear under the individual Volume Surge and MACD Turned Green sections, same as ATR Reclaim symbols already do — no section is exclusive of another. Sample is tiny; revisit once more combos have fired.
+**MACD Green + Volume Surge confluence section.** Same-day `MACD TURNED GREEN` + `VOLUME SURGE` (from `data/signals.csv`, 4 occurrences since 2026-08-06) averaged +9.1% at 10 sessions, 100% win — well above either signal alone. `formatTelegramMessages()` breaks these out into their own `🔥 MACD Green + Volume Surge (Confluence)` section, currently the first section rendered since it's the strongest read found. Symbols in this section still also appear under the individual Volume Surge and MACD Turned Green sections — no section is exclusive of another. Sample is tiny; revisit once more combos have fired.
 
 VOLUME SURGE is the one exception to the event-not-state pattern used elsewhere in this file — a deliberate choice, not an oversight.
 
-The ATR Reclaim signal originally used a static "within 3% above the ATR line" proximity check (and later a 5-day crossover window, since narrowed to today's bar along with the MACD signals) — a state check, not an event check, so a stock drifting slowly down toward its own (flat) trailing-stop line would get flagged every single day, not just the day it actually crossed. `detectAtrReclaim()` fixes this the same way the MACD signals were fixed: it requires an actual crossover within the lookback window (seen concretely with BRK-B, which sat continuously above its stop for 10+ days while just drifting closer — the old logic would've flagged it daily, the new logic correctly shows no signal). The legacy CDP scanner can't compute this, since CDP only exposes today's ATR Trailing Stop value, not per-bar history — its entries always carry `atrReclaimDaysAgo: null`, so it simply won't produce ATR Reclaim signals. It was originally called "Potential Buy" — renamed since the condition (trend-continuation reclaim with bullish confluence) isn't itself a trade recommendation.
+### Removed: ATR Reclaim (Bullish Confluence)
 
-`generateSummary()` adds inline annotations (RSI oversold/overbought, mixed trend, divergence, ATR proximity, EMA200 position).
+`detectAtrReclaim()` and `isAtrReclaim()` were removed on 2026-09-22. The signal fired when price crossed from at/below the ATR Trailing Stop to above it on today's bar, gated on `price > ema200` and `htfTrend === 'BULLISH'` ("Bullish Confluence"). It was originally called "Potential Buy" — renamed since the condition (trend-continuation reclaim) wasn't itself a trade recommendation — and later tightened from a static "within 3% of the line" proximity check (which flagged a stock drifting slowly toward its own flat stop every single day, e.g. BRK-B) to a real crossover-on-today's-bar check, the same state-vs-event fix applied to the MACD signals.
+
+It was removed because the gate never earned the "Bullish Confluence" framing and the underlying signal was weak regardless. Recomputing `lib/indicators.js` over all 366 real ATR-stop crossovers in `data/bars.db` history:
+
+| | 5 sessions | 10 sessions | 20 sessions |
+|---|---|---|---|
+| Gated (production) | +0.60% / 55% win | +0.63% / 49% win | +2.31% / 46% win |
+| Fails gate (price below EMA200) | +1.07% / 55% win | +1.49% / 56% win | +2.07% / 48% win |
+| Ungated (every crossover) | +0.74% / 55% win | +0.89% / 51% win | +2.24% / 47% win |
+
+The gate didn't add value — at 10 sessions the gated version was *worse* than reclaims happening below EMA200 (+0.63%/49% vs +1.49%/56%) — and the ungated baseline itself hovered near a coin flip. A likely mechanical reason: the ATR Trailing Stop resets to `low − 3 × ATR(10)` on the very bar a reclaim fires, so every reclaim is a fresh full stop-width move by construction, not evidence of trend strength — see the removed "no distance-to-stop figure" rationale this file used to carry, kept here since it still explains why the line looked more actionable than it was: on 2026-08-05 MRVL printed a nominal +37.0% gap against GDX's +16.3% purely because MRVL is more volatile, and MRVL actually closed *down* 3.5% that day.
+
+The signal can be fully reconstructed from `data/bars.db` at any time (as the table above was) — nothing needed to keep logging it going forward. Historical `ATR RECLAIM` rows in `data/signals.csv` predate the removal and remain as a record of what used to fire.
+
+The legacy CDP scanner never could compute this anyway, since CDP only exposes today's ATR Trailing Stop value, not per-bar history — its entries always carried `atrReclaimDaysAgo: null`.
+
+`generateSummary()` still adds its own inline annotations independent of this removed signal (RSI oversold/overbought, mixed trend, divergence, ATR proximity, EMA200 position).
 
 It deliberately ignores the indicator's Momentum and Volume cells. Both were once wired in — `momentum === 'FADING'` → "momentum fading" and `volume.includes('HIGH')` → "high volume" — and neither could ever match: `indicatorSuite.txt:583` emits `ACCELERATING`/`DECELERATING`/`STABLE` for Momentum (`FADING` appears only in the Warning cell, as `↓ BULL FADING`), and `:589` emits `SURGE`/`ABOVE AVG`/`LOW`/`AVERAGE` for Volume. Verified dead across all 36,341 bars in `data/bars.db`, and dead in the legacy CDP scanner too, since it scrapes the same table. They were deleted rather than repaired: `DECELERATING` covers ~20 of 91 symbols on a typical bar and volume surges already have their own section, so "fixing" them would have re-added noise the single-bar signal gating removed.
 
-`isAtrReclaim(r)` and `getActiveSignals(r)` are the single source of truth for which signals are "firing" on a result entry — both `formatTelegramMessages()` and `lib/signalLog.js` use them, so the Telegram report and the historical signal log can never drift apart.
+`getActiveSignals(r)` is the single source of truth for which signals are "firing" on a result entry — both `formatTelegramMessages()` and `lib/signalLog.js` use it, so the Telegram report and the historical signal log can never drift apart.
 
 ## Historical Signal Log (`lib/signalLog.js`)
 
-Every run appends one row per newly fired signal to `data/signals.csv` — `date,symbol,signal,price,atr,ema200,rsi`, where `signal` is one of `ATR RECLAIM`, `MACD TURNED GREEN`, `MACD TURNED POSITIVE`, `RSI RECLAIMED 30`, `VOLUME SURGE`. Note `VOLUME SURGE` is a state signal, so it can log the same symbol on consecutive days while volume stays elevated — every other signal here logs only once per event. `date` is the bar's actual trading date (from `lib/indicators.js`'s row), not the run's wall-clock date, so a late/manual run still logs against the correct day. Unlike `data/bars.db`, this file is append-only and never trimmed — it's a growing record for later research into which signals actually worked (e.g. cross-referencing against `data/bars.db` price history N days later).
+Every run appends one row per newly fired signal to `data/signals.csv` — `date,symbol,signal,price,atr,ema200,rsi,combo`, where `signal` is one of `MACD TURNED GREEN`, `MACD TURNED POSITIVE`, `RSI RECLAIMED 30`, `VOLUME SURGE` (`ATR RECLAIM` appears only in rows written before its removal on 2026-09-22 — see above). Note `VOLUME SURGE` is a state signal, so it can log the same symbol on consecutive days while volume stays elevated — every other signal here logs only once per event. `date` is the bar's actual trading date (from `lib/indicators.js`'s row), not the run's wall-clock date, so a late/manual run still logs against the correct day. Unlike `data/bars.db`, this file is append-only and never trimmed — it's a growing record for later research into which signals actually worked (e.g. cross-referencing against `data/bars.db` price history N days later).
+
+`combo` is the sorted, `+`-joined set of every signal active for that `(date, symbol)` — e.g. a symbol with both `MACD TURNED GREEN` and `VOLUME SURGE` that day gets `MACD TURNED GREEN+VOLUME SURGE` on both of its rows. Added 2026-09-22 so combo win-rate research (e.g. the Green+Volume confluence section above) can group directly on this column instead of re-deriving co-occurrence by joining `(date, symbol)` across rows each time. Rows written before that date don't have it — treat a missing/empty `combo` field as "unknown", not "no combo".
 
 Since every signal is a same-day event (see above), each row is one distinct occurrence — a symbol reappearing for the same signal on a later date is a genuinely separate crossover, not the same one re-logged. Rows written before 2026-08-06 predate that change and *do* contain up to five rows per crossover for the MACD and ATR signals; any analysis spanning that boundary should collapse consecutive-session runs of the same `(symbol, signal)` first.
 
@@ -148,13 +165,9 @@ The guard is on the symptom, not the cause — whatever makes a run land on an a
 
 The message carries no title or date line — it opens directly on the first populated section. It always arrives pre-market on a weekday and always summarizes the last completed session (so a Monday message covers Friday), which makes the session unambiguous from context; a date line would only add noise. Don't "fix" this by adding one.
 
-Sections always render in this order — the two strongest, most actionable reads first, then the momentum shifts, then the oversold bounce:
+Sections always render in this order — the strongest, most actionable read first, then the momentum shifts, then the oversold bounce:
 
 ```
-*🎯 ATR Reclaim (Bullish Confluence):*
-*SYMBOL* $price
-  _above EMA200_
-
 *🔥 MACD Green + Volume Surge (Confluence):*
 *SYMBOL* $price
   _above EMA200_
@@ -175,14 +188,6 @@ Sections always render in this order — the two strongest, most actionable read
 Empty sections are skipped entirely, so the message opens on whichever of these is first populated. Within a section, symbols are sorted alphabetically (see `formatTelegramMessages()`), so a symbol keeps its position from one day's message to the next.
 
 Messages are chunked at 3800 chars to stay under Telegram's 4096 limit.
-
-### ATR Reclaim lines carry no distance-to-stop figure
-
-They used to print `(price − atrTrailingStop) / atrTrailingStop` as a percentage. It looks like performance and isn't: the ATR Trailing Stop flips sides on a reclaim, resetting to `low − 3 × ATR(10)` on the very bar the signal fires, so the gap is always one fresh full stop-width. The number therefore only ever reported how wide that symbol's ATR band is. On 2026-08-05, MRVL printed `+37.0%` against GDX's `+16.3%` — not because MRVL's reclaim was stronger but because MRVL is more volatile, and MRVL in fact closed *down* 3.5% that day. BE printed `+70.1%` off a stop that had just reset from 268.52 to 137.73.
-
-The stop level itself is real and reconciles exactly to the Pine formula, but it isn't shown either — verified for BE/MRVL/GDX against `low − 3 × ATR(10)` with `atrLength = 10`, `atrMultiplier = 3.0` (`reference/indicatorSuite.txt:53-54`). Two properties make it a poor thing to put in a headline: it's at its widest on exactly the bar the report prints it (from the next bar it ratchets up via `max(prevStop, close − 3×ATR)` and never loosens), and it's anchored to the day's low rather than the close.
-
-Don't reintroduce either figure. Note this leaves the `just reclaimed ATR` and `close to ATR flip` branches in `generateSummary()` unreachable for this section — an ATR Reclaim entry is by definition a full stop-width above its stop, never within 3% of it.
 
 ### Sector labels on ETFs
 

@@ -227,7 +227,7 @@ async function main() {
       // No historical ATR Trailing Stop, RSI, or volume ratio is available from CDP
       // (only today's snapshot), so this legacy path can't detect real crossover
       // events or the volume surge state check — see architecture.md.
-      const entry = { symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, atrReclaimDaysAgo: null, rsiSignals: [], volumeSignals: [], volumeRatio: null, trend, htfTrend, momentum, divergence, volume, summary };
+      const entry = { symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, rsiSignals: [], volumeSignals: [], volumeRatio: null, trend, htfTrend, momentum, divergence, volume, summary };
       results.push(entry);
 
       const pct = ((price - atr) / atr * 100).toFixed(1);
