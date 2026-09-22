@@ -112,7 +112,9 @@ The two MACD signals are now mutually exclusive by construction: TURNED GREEN re
 
 **Why RSI RECLAIMED 30 also requires ADX ≥ 20.** Recomputing `lib/indicators.js` over all 469 reclaims in `data/bars.db` history and splitting on ADX at cross time: the 103 with ADX < 20 (choppy/range-bound) averaged **−3.39%** at 10 sessions (32% win) and **−6.55%** at 20 (22% win) — a fakeout more often than not — against **+2.02%** (58% win) and **+5.01%** (64% win) for the 362 with ADX ≥ 20. `RSI_RECLAIM_MIN_ADX` (20, `lib/report.js`) gates on this — 20 isn't a new tuned number, it's `lib/indicators.js`'s own `adxThreshold` default, reused rather than inventing a second cutoff. `MACD TURNED GREEN` shows the same direction (ADX ≥ 20 outperforms: +3.63%/64% win vs +2.32%/53% win at 10d, n=451 vs n=361) but stays net positive either way, so it isn't gated — this treatment is for a signal whose weak-ADX bucket goes negative, not just weaker. The legacy CDP scanner doesn't scrape ADX, so `detectRsiSignals()` treats a missing `adx` as "don't gate" rather than suppressing there.
 
-**MACD Green + Volume Surge confluence section.** Same-day `MACD TURNED GREEN` + `VOLUME SURGE`: the 4 occurrences logged in `data/signals.csv` since 2026-08-06 averaged +9.1% at 10 sessions, 100% win, which is what motivated shipping the section. A full recompute over `data/bars.db` history since then found 59 same-day occurrences and confirms the direction at a much larger sample: +3.85%/64% win at 10 sessions and +5.17%/58% win at 20, beating both legs alone (MACD Green alone: +3.05%/59%; Volume Surge alone: +2.79%/57%, both at 10d). `formatTelegramMessages()` breaks these out into their own `🔥 MACD Green + Volume Surge (Confluence)` section, currently the first section rendered since it's the strongest read found. Symbols in this section still also appear under the individual Volume Surge and MACD Turned Green sections — no section is exclusive of another.
+**MACD Green + Volume Surge confluence section.** Same-day `MACD TURNED GREEN` + `VOLUME SURGE`: the 4 occurrences logged in `data/signals.csv` since 2026-08-06 averaged +9.1% at 10 sessions, 100% win, which is what motivated shipping the section. A full recompute over `data/bars.db` history since then found 59 same-day occurrences and confirms the direction at a much larger sample: +3.85%/64% win at 10 sessions and +5.17%/58% win at 20, beating both legs alone (MACD Green alone: +3.05%/59%; Volume Surge alone: +2.79%/57%, both at 10d). `formatTelegramMessages()` breaks these out into their own `🔥 MACD Green + Volume Surge (Confluence)` section. Symbols in this section still also appear under the individual Volume Surge and MACD Turned Green sections — no section is exclusive of another.
+
+**RSI Reclaim + Volume Surge confluence section, at a tightened volume threshold.** Same-day `RSI RECLAIMED 30` + `VOLUME SURGE` at the standard 1.75x volume ratio: n=74 (10d +2.15%/61% win, 20d +7.03%/76% win) — already better than either leg alone. Sweeping the ratio cutoff on the same full-history recompute: 2.0x sharpens this to n=38 (10d +2.50%/68% win, 20d +7.69%/82% win) without the sample collapsing the way 2.5x does (n=11, 20d win drops to 64%). `RSI_VOLUME_COMBO_MIN_RATIO` (2.0, `lib/report.js`) gates the `🔥 RSI Reclaim + Volume Surge (Confluence)` section on this — a report-section-only threshold; the standalone `VOLUME SURGE` signal and its `data/signals.csv` log entry are unaffected and still use `VOLUME_SURGE_THRESHOLD` (1.75). Tried and rejected as filters on this combo: ADX ≥ 20 (barely moves it, since the combo is already ~90% ADX ≥ 20 by nature), above-EMA200 (shrinks to n=3, too small to trust), and adding MACD Green as a third leg (n=6, too small).
 
 VOLUME SURGE is the one exception to the event-not-state pattern used elsewhere in this file — a deliberate choice, not an oversight.
 
@@ -167,10 +169,14 @@ The guard is on the symptom, not the cause — whatever makes a run land on an a
 
 The message carries no title or date line — it opens directly on the first populated section. It always arrives pre-market on a weekday and always summarizes the last completed session (so a Monday message covers Friday), which makes the session unambiguous from context; a date line would only add noise. Don't "fix" this by adding one.
 
-Sections always render in this order — the strongest, most actionable read first, then the momentum shifts, then the oversold bounce:
+Sections always render in this order — the strongest, most actionable reads first, then the momentum shifts, then the oversold bounce:
 
 ```
 *🔥 MACD Green + Volume Surge (Confluence):*
+*SYMBOL* $price
+  _above EMA200_
+
+*🔥 RSI Reclaim + Volume Surge (Confluence):*
 *SYMBOL* $price
   _above EMA200_
 
