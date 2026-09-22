@@ -12,7 +12,10 @@
  * alone, is noise, not a real interaction.
  *
  * Usage: node research/build-cache.mjs   (run first, or after bars.db changes)
- *        node research/brute-force.mjs
+ *        node research/brute-force.mjs [--db=path]
+ *   --db defaults to research/research.db; point it at whatever --out
+ *   build-cache.mjs was given (e.g. research/universe_features.db) to run
+ *   against a different cached universe.
  */
 import { DatabaseSync } from 'node:sqlite';
 import { dirname, join } from 'path';
@@ -20,7 +23,13 @@ import { fileURLToPath } from 'url';
 import { FLAG_NAMES } from './features.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const RESEARCH_DB = join(__dirname, 'research.db');
+
+function argValue(name, fallback) {
+  const arg = process.argv.find(a => a.startsWith(`--${name}=`));
+  return arg ? arg.slice(name.length + 3) : fallback;
+}
+
+const RESEARCH_DB = argValue('db', join(__dirname, 'research.db'));
 const HORIZONS = [5, 10, 20, 30];
 const MIN_TOTAL = 40;   // minimum combined sample before a combo is even considered
 const MIN_HALF = 15;    // minimum sample within EACH half — below this a half's win rate is too noisy to judge

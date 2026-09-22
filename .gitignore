@@ -3,3 +3,5 @@ node_modules/
 last_run.txt
 telegram.config.json
 research/research.db
+research/universe.db
+research/universe_features.db

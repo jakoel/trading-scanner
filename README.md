@@ -27,6 +27,7 @@ For each symbol, `lib/indicators.js` reproduces the full indicator suite from th
 ## Telegram output
 
 Stocks are grouped into sections:
+- **🔥 Bullish Divergence + Strong Trend (Confluence)** — the indicator's own bullish divergence flag firing with ADX ≥ 20 on the same day
 - **🔥 MACD Green + Volume Surge (Confluence)** — MACD Turned Green and Volume Surge (below) both firing for the same symbol on the same day
 - **🔥 MACD Green + Strong Trend (Confluence)** — MACD Turned Green firing with ADX ≥ 25 on the same day
 - **🔥 RSI Reclaim + Volume Surge (Confluence)** — RSI Reclaimed 30 firing with volume ≥2.0x its 20-day average on the same day

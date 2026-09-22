@@ -16,7 +16,7 @@ import { dirname, join } from 'path';
 import { sendMessage } from './telegram.js';
 import { updateBars, latestStoredSessionDate } from './lib/bars.js';
 import { computeIndicators } from './lib/indicators.js';
-import { detectMacdSignals, detectRsiSignals, detectVolumeSignals, generateSummary, formatTelegramMessages } from './lib/report.js';
+import { detectMacdSignals, detectRsiSignals, detectVolumeSignals, detectDivergenceSignals, generateSummary, formatTelegramMessages } from './lib/report.js';
 import { logSignals } from './lib/signalLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -69,6 +69,7 @@ async function main() {
       const { rsiSignals } = detectRsiSignals(rsiHistory, { adx: last.adx });
       const prevPrice = rows.length >= 2 ? rows[rows.length - 2].price : null;
       const { volumeSignals } = detectVolumeSignals({ volumeRatio: last.volumeRatio, price, prevPrice });
+      const { divergenceSignals } = detectDivergenceSignals(last.divergence, last.adx);
 
       const summary = generateSummary({
         price, atr, ema200, rsi,
@@ -77,13 +78,14 @@ async function main() {
 
       // `trend`/`htfTrend` feed the console line and generateSummary()'s mixed-
       // trend annotation, `volumeRatio` the Volume Surge report line, `adx`
-      // the MACD Green + Strong Trend confluence section. The indicator's
-      // remaining table cells (score/signal/warning/momentum/volume) stay on
-      // the computeIndicators() row — the validated mirror of the TradingView
-      // table — and are deliberately not copied here.
+      // the MACD Green + Strong Trend and Bullish Divergence + Strong Trend
+      // confluence sections. The indicator's remaining table cells
+      // (score/signal/warning/momentum/volume) stay on the computeIndicators()
+      // row — the validated mirror of the TradingView table — and are
+      // deliberately not copied here.
       const entry = {
         symbol, date: last.date, price, atr, ema200, rsi, adx: last.adx, macdSignals, rsiSignals,
-        volumeSignals, volumeRatio: last.volumeRatio,
+        volumeSignals, divergenceSignals, volumeRatio: last.volumeRatio,
         trend: last.trend, htfTrend: last.htfTrend, summary,
       };
       results.push(entry);
