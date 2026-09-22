@@ -31,10 +31,9 @@ Stocks are grouped into sections:
 - **🔥 MACD Green + Strong Trend (Confluence)** — MACD Turned Green firing with ADX ≥ 25 on the same day
 - **🔥 RSI Reclaim + Volume Surge (Confluence)** — RSI Reclaimed 30 firing with volume ≥2.0x its 20-day average on the same day
 - **⚡ MACD Turned Positive** — the MACD line itself crossed zero on today's bar *and* the histogram is positive *and* ADX ≥ 25 (a more mature momentum confirmation)
-- **📈 RSI Reclaimed 30** — RSI crossed back above 30 on today's bar, with ADX ≥ 20
 - **📊 Volume Surge** — today's volume ≥1.75x its 20-day average on an up day (fires every day it stays elevated, not just once)
 
-MACD Turned Green alone has no standalone section — it's weaker than either confluence section above, so it only surfaces there.
+MACD Turned Green and RSI Reclaimed 30 have no standalone sections — both are weaker alone than the confluence sections above, so they only surface there.
 
 See `architecture.md` for the full technical reference, including why a 5-trading-day lookback replaced the original single-bar magnitude thresholds.
 
