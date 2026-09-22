@@ -66,7 +66,7 @@ async function main() {
       const rsiHistory = rows.slice(-7).map(r => ({ rsi: r.rsi }));
 
       const { macdSignals } = detectMacdSignals(macdLineVal, macdHistory, { price: last.price, atrTrailingStop: last.atrTrailingStop });
-      const { rsiSignals } = detectRsiSignals(rsiHistory);
+      const { rsiSignals } = detectRsiSignals(rsiHistory, { adx: last.adx });
       const prevPrice = rows.length >= 2 ? rows[rows.length - 2].price : null;
       const { volumeSignals } = detectVolumeSignals({ volumeRatio: last.volumeRatio, price, prevPrice });
 
