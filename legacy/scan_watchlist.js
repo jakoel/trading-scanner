@@ -224,12 +224,13 @@ async function main() {
 
       const summary = generateSummary({ price, atr, ema200, rsi, macdHist, trend, htfTrend, momentum, divergence, volume });
 
-      // No historical ATR Trailing Stop, RSI, or volume ratio is available from CDP
-      // (only today's snapshot), so this legacy path can't detect real crossover
-      // events or the volume surge state check — see architecture.md. It also
-      // doesn't scrape ADX, so the Bullish Divergence + Strong Trend combo
+      // No historical ATR Trailing Stop, RSI, volume ratio, or raw OHLCV history
+      // is available from CDP (only today's snapshot), so this legacy path can't
+      // detect real crossover events, the volume surge state check, or anything
+      // FVG/VWAP-based (both need a trailing window of bars) — see architecture.md.
+      // It also doesn't scrape ADX, so the Bullish Divergence + Strong Trend combo
       // (which requires it) can never fire here.
-      const entry = { symbol, price, atr, ema200, rsi, macdHist, macdLineVal, macdSignals, rsiSignals: [], volumeSignals: [], divergenceSignals: [], volumeRatio: null, trend, htfTrend, momentum, divergence, volume, summary };
+      const entry = { symbol, price, atr, ema200, rsi, rsiNum: null, macdHist, macdLineVal, macdSignals, rsiSignals: [], volumeSignals: [], divergenceSignals: [], fvgSignals: [], vwapSignals: [], volumeRatio: null, trend, htfTrend, momentum, divergence, volume, summary };
       results.push(entry);
 
       const pct = ((price - atr) / atr * 100).toFixed(1);

@@ -103,6 +103,8 @@ The MACD lookback (and, while it existed, the ATR Reclaim lookback) were origina
 | ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 on today's bar, **AND the histogram is positive** (line above its own signal line). A more mature momentum confirmation than TURNED GREEN. **Also requires ADX ≥ `MACD_STRONG_TREND_ADX`** (25) — see below. |
 | 📈 RSI RECLAIMED 30 | RSI crossed from ≤30 to >30 on today's bar (`detectRsiSignals()`) — fires once, the exact day it pops back out of oversold, not the day it dropped below 30 and not on subsequent days it happens to still be above 30. **Also requires ADX ≥ `RSI_RECLAIM_MIN_ADX`** (20) — see below. No standalone Telegram section — see below. |
 | 📊 VOLUME SURGE | `volumeRatio` (today's volume vs 20-day average, from `lib/indicators.js`) is ≥ `VOLUME_SURGE_THRESHOLD` (1.75x), AND today's close is above yesterday's close (`detectVolumeSignals()`). Unlike every other signal here, this is a **state check, not an event** — it fires every day volume stays elevated on an up day, not just the first day, by design (sustained high-volume buying is itself noteworthy each day it continues). Note this is **not** the same knob as `volumeSurgeMultiplier` (1.5) in `lib/indicators.js`, which feeds the confluence score and the SURGE/ABOVE AVG cell and is held at the live Pine input's value — the report threshold was raised to 1.75 on 2026-08-12 to cut the fat tail of market-wide volume days (p90 dropped from 11 lines to 7, worst day from 45 to 33). Telegram line includes the volume ratio. |
+| 🔥 BULLISH FVG FORMED / RETEST | `lib/fairValue.js`'s `detectFvgSignals()` — a Fair Value Gap (3-candle price imbalance) ported from LuxAlgo's public Pine indicator, and its retest (price returning to an unfilled gap and finding support). Not part of `lib/indicators.js`. Only RETEST is used in a shipped combo; FORMED is logged but not displayed — see below. |
+| 🔥 VWAP RECLAIM | `lib/fairValue.js`'s `detectVwapSignals()` — price crossing back above a rolling 20-day volume-weighted average price (a daily-bar stand-in for intraday VWAP; see below for why). |
 | 🔥 BULLISH DIVERGENCE (Strong Trend) | `indicators.js`'s own `row.divergence === 'BULLISH DIV'` (already pivot-confirmed on this exact bar — no separate crossover check needed, see the Indicator Port section above), **AND ADX ≥ `BULLISH_DIV_MIN_ADX`** (20) — see below. Only ever surfaces as a confluence section, no standalone display. |
 
 The two MACD signals are now mutually exclusive by construction: TURNED GREEN requires a negative MACD line and TURNED POSITIVE requires a positive one. The `macdLineVal < 0` gate on TURNED GREEN is what makes the signal mean something. Ungated, a histogram crossing up while the line is already positive is ordinary re-acceleration inside an existing uptrend, and in a broad bounce it fires across the whole list at once — 47 of 91 symbols on 2026-08-05, i.e. a signal firing on half the watchlist, which says nothing beyond "the market went up". Those names still surface under TURNED POSITIVE on the day their line actually crosses zero.
@@ -141,6 +143,25 @@ It never actually worked on the watchlist itself. Checked directly against `data
 **MACD Green + Strong Trend confluence section, and the same ADX gate on TURNED POSITIVE.** Recomputing over full `data/bars.db` history: `MACD TURNED POSITIVE` (already extension-gated) goes from n=437 (30d +9.06%/64% win) to n=43 with ADX ≥ 25 (30d +11.12%/79% win) — and unlike almost every other combo tested this session, the two halves of history barely diverge (77% vs 81% win at 30d), not a result carried by one bullish period. `MACD_STRONG_TREND_ADX` (25) gates `TURNED POSITIVE` directly on this. The same threshold, applied to `MACD TURNED GREEN` instead, surfaces the `🔥 MACD Green + Strong Trend (Confluence)` section: n=299-301 across horizons, 10d +4.62%/70% win, 30d +9.98%/70% win, the largest-sample combo found this session — though this one *does* show real regime skew between history's two halves (unlike the TURNED POSITIVE gate above), so read its win rate as "clearly better than MACD Green alone" rather than a precise, stable number. One constant, `MACD_STRONG_TREND_ADX`, covers both since the same MACD-momentum + ADX ≥ 25 relationship showed up independently for both signals. 25 is stricter than `RSI_RECLAIM_MIN_ADX` (20) — the data supported a tighter cutoff for these two specifically, not a case of picking a different number for the sake of it.
 
 **Researched but not shipped: MACD TURNED POSITIVE + `↓ BULL FADING`.** A brute-force sweep of `macdPositiveRaw` (ungated) against every other flag in `research/features.mjs`, run against a 174-symbol combined watchlist+QQQ set (200 trading days each), found one combo that passed the split-period check: pairing with the indicator's own `↓ BULL FADING` warning (momentum already decelerating right at the cross) — counterintuitive, but real: adding it on top of the existing extension + ADX ≥ 25 gates improved 30-session win rate on **all four** datasets (watchlist 68%→84%, S&P 500 51%→58%, Nasdaq-100 63%→90%, combined 64%→88%). Not shipped yet — the gated samples are thin (n=10-25 depending on dataset), and an already-infrequent signal would become rarer still. Worth watching for a few more weeks of live data before deciding. If shipped, it would be `warning === '↓ BULL FADING'` added to `detectMacdSignals()`'s existing TURNED POSITIVE condition, not a new signal.
+
+### Combo matching windowed to +/-3 trading days, and the "fair value" family (FVG, VWAP)
+
+`research/brute-force.mjs` originally required both flags in a combo to be true on the *exact same bar* — needlessly strict for signals that naturally confirm a few days apart, and the reason Bullish Divergence + Strong Trend above needed same-day co-occurrence to even register as a combo. Fixed to match within `+/-WINDOW` trading days (same symbol, default 3), anchored on the *later* of the two occurrences (the day you'd actually know both had fired) — verified `--window=0` reproduces the exact old same-day results before trusting anything found with the wider window.
+
+Also added `lib/fairValue.js`: signals outside the MACD/RSI/ATR family entirely, on the theory that everything found so far was a variation on momentum/trend-strength and the search needed genuinely different mechanics. **Bullish Fair Value Gap** (`detectFvgSignals()`) is ported from LuxAlgo's public "Fair Value Gap [LuxAlgo]" Pine indicator (threshold=0, its default) — a 3-candle price imbalance (`low[i] > high[i-2]` AND `close[i-1] > high[i-2]`, the middle candle's close confirming it's not just a wick), with a bounded backward scan (`FVG_RETEST_LOOKBACK` = 15 bars) for RETEST: price dipping back into the nearest still-unfilled zone and closing back above its bottom — the actual ICT/SMC entry, not just the imbalance. **VWAP Reclaim** (`detectVwapSignals()`) is a rolling 20-day volume-weighted average price — the daily-bar equivalent of intraday VWAP, since this project has no tick data — with price crossing back above it. Both are pure OHLCV functions, no dependency on `lib/indicators.js`, and are imported by both `research/features.mjs` and `lib/report.js` from the same module so research and production can never drift on their definitions (Bollinger/Donchian, also added to `research/features.mjs` this round, stayed research-only — nothing shipped depends on them).
+
+Rerunning the windowed brute-force across all four datasets surfaced something important before anything shipped: **every top combo from the watchlist-only run (`adx25 + bollingerLowerReclaim`, n=1400+, 65-77% win; `adx25/adx20 + rsiOversoldState`, similarly huge) collapsed to 51-60% — a coin flip — on all three broader datasets.** Mirror image of the Bullish Divergence failure: strong on the watchlist, doesn't generalize anywhere else. None of those shipped. Instead, the bar was raised to "passes the split-period OOS check on 2+ independent datasets simultaneously" — 35 of 406 pairs cleared that, and four were strong and clean enough to ship:
+
+| Combo | Horizon | Watchlist | S&P 500 | Nasdaq-100 | Combined |
+|---|---|---|---|---|---|
+| `MACD TURNED GREEN` + ADX ≥ 25 *(already shipped above)* | 10d | n=366, 65% | n=791, 57% | — | n=267, 60% |
+| `BULLISH FVG RETEST` + `RSI RECLAIMED 30` | 5d | n=109, 61% | n=205, 62% | — | n=101, 61% |
+| `MACD TURNED GREEN` + `RSI RECLAIMED 30` | 10d | n=124, 65% | — | n=62, 63% | n=104, 62% |
+| RSI ≥ 70 (state) + `VWAP RECLAIM` | 5d | n=144, 63% | — | n=56, 63% | n=93, 63% |
+
+The FVG Retest + RSI Reclaim row is the strongest of the three new ones — it's the only new combo validated including the full S&P 500 (not just momentum-tilted universes), and the win rate barely moves across all three (61/62/61%). RSI Overbought + VWAP Reclaim is a momentum-*continuation* read, not an oversold bounce like the others — price is already strong and just reclaimed its own volume-weighted fair value after a dip, hence its distinct section title. `VWAP_RSI_OVERBOUGHT_THRESHOLD` (70, `lib/report.js`) is this combo's own constant, unrelated to the RSI-oversold constants elsewhere. `MACD TURNED GREEN` + `RSI RECLAIMED 30` and `MACD TURNED GREEN` + ADX≥25 above share the same left-hand signal but are independent sections — a symbol can appear in both, neither, or one.
+
+None of these four show the tight split-half consistency `bullFading` or the ADX gate on TURNED POSITIVE showed — expect the usual regime skew (stronger in the earlier half of each dataset's history) rather than a flat, precise number. They shipped on cross-dataset agreement, the same bar Bullish Divergence passed before failing the watchlist-specific check — worth remembering that bar has been wrong before and re-checking these against a few more weeks of live data as it accumulates.
 
 VOLUME SURGE is the one exception to the event-not-state pattern used elsewhere in this file — a deliberate choice, not an oversight.
 
@@ -200,7 +221,19 @@ The message carries no title or date line — it opens directly on the first pop
 Sections always render in this order — the strongest, most actionable reads first, then the momentum shifts, then the oversold bounce:
 
 ```
+*🔥 Bullish FVG Retest + RSI Reclaim (Confluence):*
+*SYMBOL* $price
+  _above EMA200_
+
 *🔥 MACD Green + Strong Trend (Confluence):*
+*SYMBOL* $price
+  _above EMA200_
+
+*🔥 MACD Green + RSI Reclaim (Confluence):*
+*SYMBOL* $price
+  _above EMA200_
+
+*🔥 RSI Overbought + VWAP Reclaim (Momentum Continuation):*
 *SYMBOL* $price
   _above EMA200_
 

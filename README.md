@@ -27,11 +27,14 @@ For each symbol, `lib/indicators.js` reproduces the full indicator suite from th
 ## Telegram output
 
 Stocks are grouped into sections:
-- **🔥 MACD Green + Strong Trend (Confluence)** — MACD Turned Green firing with ADX ≥ 25 on the same day
+- **🔥 Bullish FVG Retest + RSI Reclaim (Confluence)** — a Fair Value Gap (3-candle price imbalance) getting retested and finding support, same symbol/window as RSI Reclaimed 30
+- **🔥 MACD Green + Strong Trend (Confluence)** — MACD Turned Green firing with ADX ≥ 25
+- **🔥 MACD Green + RSI Reclaim (Confluence)** — MACD Turned Green and RSI Reclaimed 30, same symbol/window
+- **🔥 RSI Overbought + VWAP Reclaim (Momentum Continuation)** — RSI ≥ 70 with price reclaiming its rolling 20-day volume-weighted average price; a strength-confirming-strength read, not an oversold bounce like the others
 - **⚡ MACD Turned Positive** — the MACD line itself crossed zero on today's bar *and* the histogram is positive *and* ADX ≥ 25 (a more mature momentum confirmation)
 - **📊 Volume Surge** — today's volume ≥1.75x its 20-day average on an up day (fires every day it stays elevated, not just once)
 
-MACD Turned Green has no standalone section — it's weaker alone than the confluence section above, so it only surfaces there. RSI Reclaimed 30 and Bullish Divergence + Strong Trend have no display at all currently — both tested weak specifically on this watchlist's own symbols, despite looking strong on broader markets (Bullish Divergence) or the watchlist historically (RSI Reclaim + Volume Surge) — see `architecture.md`.
+"Same symbol/window" combos match within a few trading days of each other, not necessarily the same bar — see `architecture.md`. MACD Turned Green and RSI Reclaimed 30 have no standalone sections — both are weaker alone than the confluence sections above, so they only surface via combos. Bullish Divergence + Strong Trend has no display at all — tested weak specifically on this watchlist's own symbols despite looking strong on broader markets — see `architecture.md`.
 
 See `architecture.md` for the full technical reference, including why a 5-trading-day lookback replaced the original single-bar magnitude thresholds.
 

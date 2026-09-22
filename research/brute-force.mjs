@@ -11,11 +11,20 @@
  * only looks good in one half, or that's no better than its stronger leg
  * alone, is noise, not a real interaction.
  *
+ * Combo matching allows the two flags to fire up to WINDOW trading days apart
+ * (same symbol), not just on the exact same bar — requiring an exact same-day
+ * match was needlessly strict for signals that naturally confirm a few days
+ * apart. For each occurrence of flag A, the nearest occurrence of flag B
+ * within [-WINDOW, +WINDOW] trading days counts as one combo event, anchored
+ * on the LATER of the two (the day you'd actually know both had fired);
+ * WINDOW=0 reduces to the old same-day-only behavior exactly.
+ *
  * Usage: node research/build-cache.mjs   (run first, or after bars.db changes)
- *        node research/brute-force.mjs [--db=path]
+ *        node research/brute-force.mjs [--db=path] [--window=N]
  *   --db defaults to research/research.db; point it at whatever --out
  *   build-cache.mjs was given (e.g. research/universe_features.db) to run
  *   against a different cached universe.
+ *   --window defaults to 3 trading days.
  */
 import { DatabaseSync } from 'node:sqlite';
 import { dirname, join } from 'path';
@@ -30,6 +39,7 @@ function argValue(name, fallback) {
 }
 
 const RESEARCH_DB = argValue('db', join(__dirname, 'research.db'));
+const WINDOW = Number(argValue('window', '3'));
 const HORIZONS = [5, 10, 20, 30];
 const MIN_TOTAL = 40;   // minimum combined sample before a combo is even considered
 const MIN_HALF = 15;    // minimum sample within EACH half — below this a half's win rate is too noisy to judge
@@ -37,9 +47,42 @@ const MIN_LIFT = 0.03;  // combo's total win rate must beat the better single le
 
 const db = new DatabaseSync(RESEARCH_DB);
 
-const cols = ['date', ...HORIZONS.map(n => `fwd${n}`), ...FLAG_NAMES.map(n => `f_${n}`)];
-const rows = db.prepare(`SELECT ${cols.join(', ')} FROM bar_features ORDER BY date`).all();
+const cols = ['symbol', 'date', ...HORIZONS.map(n => `fwd${n}`), ...FLAG_NAMES.map(n => `f_${n}`)];
+const rows = db.prepare(`SELECT ${cols.join(', ')} FROM bar_features ORDER BY symbol, date`).all();
 console.log(`Loaded ${rows.length} bar-rows from research.db`);
+console.log(`Combo match window: +/-${WINDOW} trading days (same symbol), anchored on the later occurrence\n`);
+
+// Grouped by symbol, each group already date-ordered (stable sort of a
+// symbol,date-ordered query) — needed so "N trading days apart" means N rows
+// apart within one symbol's own sequence, not N calendar days across symbols.
+const bySymbol = new Map();
+for (const r of rows) {
+  if (!bySymbol.has(r.symbol)) bySymbol.set(r.symbol, []);
+  bySymbol.get(r.symbol).push(r);
+}
+
+/** Every windowed occurrence of flagA+flagB, one row per matched pair (the
+ * later of the two), deduped so the same anchor bar isn't counted twice. */
+function windowedCombo(flagA, flagB) {
+  const colA = `f_${flagA}`, colB = `f_${flagB}`;
+  const out = [];
+  for (const symRows of bySymbol.values()) {
+    const usedAnchors = new Set();
+    for (let i = 0; i < symRows.length; i++) {
+      if (symRows[i][colA] !== 1) continue;
+      let bestJ = null, bestDist = Infinity;
+      for (let j = Math.max(0, i - WINDOW); j <= Math.min(symRows.length - 1, i + WINDOW); j++) {
+        if (symRows[j][colB] === 1 && Math.abs(j - i) < bestDist) { bestDist = Math.abs(j - i); bestJ = j; }
+      }
+      if (bestJ == null) continue;
+      const anchor = Math.max(i, bestJ);
+      if (usedAnchors.has(anchor)) continue;
+      usedAnchors.add(anchor);
+      out.push(symRows[anchor]);
+    }
+  }
+  return out;
+}
 
 const dates = rows.map(r => r.date).sort();
 const cutoff = dates[Math.floor(dates.length / 2)];
@@ -74,7 +117,7 @@ const results = [];
 for (let a = 0; a < FLAG_NAMES.length; a++) {
   for (let bIdx = a + 1; bIdx < FLAG_NAMES.length; bIdx++) {
     const flagA = FLAG_NAMES[a], flagB = FLAG_NAMES[bIdx];
-    const subset = rows.filter(r => r[`f_${flagA}`] === 1 && r[`f_${flagB}`] === 1);
+    const subset = windowedCombo(flagA, flagB);
     if (subset.length < MIN_TOTAL) continue;
 
     const half1 = subset.filter(r => r.date < cutoff);

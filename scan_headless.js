@@ -16,7 +16,7 @@ import { dirname, join } from 'path';
 import { sendMessage } from './telegram.js';
 import { updateBars, latestStoredSessionDate } from './lib/bars.js';
 import { computeIndicators } from './lib/indicators.js';
-import { detectMacdSignals, detectRsiSignals, detectVolumeSignals, detectDivergenceSignals, generateSummary, formatTelegramMessages } from './lib/report.js';
+import { detectMacdSignals, detectRsiSignals, detectVolumeSignals, detectDivergenceSignals, detectFvgSignals, detectVwapSignals, generateSummary, formatTelegramMessages } from './lib/report.js';
 import { logSignals } from './lib/signalLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -70,6 +70,9 @@ async function main() {
       const prevPrice = rows.length >= 2 ? rows[rows.length - 2].price : null;
       const { volumeSignals } = detectVolumeSignals({ volumeRatio: last.volumeRatio, price, prevPrice });
       const { divergenceSignals } = detectDivergenceSignals(last.divergence, last.adx);
+      // FVG/VWAP read raw OHLCV directly (not the indicator row) — see lib/fairValue.js.
+      const { fvgSignals } = detectFvgSignals(bars, bars.length - 1);
+      const { vwapSignals } = detectVwapSignals(bars, bars.length - 1);
 
       const summary = generateSummary({
         price, atr, ema200, rsi,
@@ -78,14 +81,15 @@ async function main() {
 
       // `trend`/`htfTrend` feed the console line and generateSummary()'s mixed-
       // trend annotation, `volumeRatio` the Volume Surge report line, `adx`
-      // the MACD Green + Strong Trend and Bullish Divergence + Strong Trend
-      // confluence sections. The indicator's remaining table cells
+      // the MACD Green + Strong Trend confluence section, `rsiNum` (the raw
+      // number, unlike the display-formatted `rsi` string) the RSI Overbought
+      // + VWAP Reclaim threshold check. The indicator's remaining table cells
       // (score/signal/warning/momentum/volume) stay on the computeIndicators()
       // row — the validated mirror of the TradingView table — and are
       // deliberately not copied here.
       const entry = {
-        symbol, date: last.date, price, atr, ema200, rsi, adx: last.adx, macdSignals, rsiSignals,
-        volumeSignals, divergenceSignals, volumeRatio: last.volumeRatio,
+        symbol, date: last.date, price, atr, ema200, rsi, rsiNum: last.rsi, adx: last.adx, macdSignals, rsiSignals,
+        volumeSignals, divergenceSignals, fvgSignals, vwapSignals, volumeRatio: last.volumeRatio,
         trend: last.trend, htfTrend: last.htfTrend, summary,
       };
       results.push(entry);

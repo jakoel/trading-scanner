@@ -73,7 +73,7 @@ for (const symbol of symbols) {
   const rows = computeIndicators(bars);
 
   for (let i = 1; i < rows.length; i++) {
-    const flags = extractFlags(rows, i);
+    const flags = extractFlags(bars, rows, i);
     if (!flags) continue;
 
     const fwds = HORIZONS.map(n => {
