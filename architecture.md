@@ -109,6 +109,10 @@ The two MACD signals are now mutually exclusive by construction: TURNED GREEN re
 
 **Why TURNED POSITIVE also requires a positive histogram.** The signal line is a lagging EMA of the MACD line, so after a sharp drop and bounce the line can cross zero while still sitting *under* a signal line decaying down from the prior run — LLY on 2026-08-06 crossed to macd +1.94 with signal 6.55 and histogram −4.61, and fired under the old line-only rule. That's recovering momentum, not confirmed momentum, and the numbers agree: across the 536 zero-crosses in `data/bars.db`, the 56 with a non-positive histogram averaged **−0.49%** over the next 10 sessions at a 39% win rate, against **+2.50%** and 57% for the 478 that had the histogram above zero. The gate drops ~11% of crosses and is what earns the section's "Confirmed Positive Momentum" title.
 
+**Why TURNED POSITIVE also requires price not be too extended above its ATR Trailing Stop.** TURNED POSITIVE is a lagging confirmation — by the time the MACD line crosses zero, price has usually already reclaimed its ATR Trailing Stop days or weeks earlier, so the gap between price and that stop at cross time tells you whether you're catching the move early or chasing an already-stretched one. Recomputing `lib/indicators.js` over the full `data/bars.db` history for the 26 TURNED POSITIVE events since 2026-08-20 and splitting on `(price - atrTrailingStop) / atrTrailingStop` at cross time: the 12 nearest their stop averaged **+0.05%** at 5 sessions (56% win), while the 12 furthest (gap up to 37%) averaged **−5.52%** (30% win) at 5 sessions and −4.40% (20% win) at 10. `MACD_POSITIVE_MAX_ATR_EXTENSION_PCT` (15) in `lib/report.js` gates on this — provisional, not tuned, and worth re-checking once more sessions accumulate past 2026-08-20.
+
+**MACD Green + Volume Surge confluence section.** Same-day `MACD TURNED GREEN` + `VOLUME SURGE` (from `data/signals.csv`, 4 occurrences since 2026-08-06) averaged +9.1% at 10 sessions, 100% win — well above either signal alone. `formatTelegramMessages()` breaks these out into their own `🔥 MACD Green + Volume Surge (Confluence)` section, ordered right after ATR Reclaim since it's currently the strongest read found. Symbols in this section still also appear under the individual Volume Surge and MACD Turned Green sections, same as ATR Reclaim symbols already do — no section is exclusive of another. Sample is tiny; revisit once more combos have fired.
+
 VOLUME SURGE is the one exception to the event-not-state pattern used elsewhere in this file — a deliberate choice, not an oversight.
 
 The ATR Reclaim signal originally used a static "within 3% above the ATR line" proximity check (and later a 5-day crossover window, since narrowed to today's bar along with the MACD signals) — a state check, not an event check, so a stock drifting slowly down toward its own (flat) trailing-stop line would get flagged every single day, not just the day it actually crossed. `detectAtrReclaim()` fixes this the same way the MACD signals were fixed: it requires an actual crossover within the lookback window (seen concretely with BRK-B, which sat continuously above its stop for 10+ days while just drifting closer — the old logic would've flagged it daily, the new logic correctly shows no signal). The legacy CDP scanner can't compute this, since CDP only exposes today's ATR Trailing Stop value, not per-bar history — its entries always carry `atrReclaimDaysAgo: null`, so it simply won't produce ATR Reclaim signals. It was originally called "Potential Buy" — renamed since the condition (trend-continuation reclaim with bullish confluence) isn't itself a trade recommendation.
@@ -148,6 +152,10 @@ Sections always render in this order — the two strongest, most actionable read
 
 ```
 *🎯 ATR Reclaim (Bullish Confluence):*
+*SYMBOL* $price
+  _above EMA200_
+
+*🔥 MACD Green + Volume Surge (Confluence):*
 *SYMBOL* $price
   _above EMA200_
 

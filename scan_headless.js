@@ -66,7 +66,7 @@ async function main() {
       const atrHistory = rows.slice(-7).map(r => ({ price: r.price, atr: r.atrTrailingStop }));
       const rsiHistory = rows.slice(-7).map(r => ({ rsi: r.rsi }));
 
-      const { macdSignals } = detectMacdSignals(macdLineVal, macdHistory);
+      const { macdSignals } = detectMacdSignals(macdLineVal, macdHistory, { price: last.price, atrTrailingStop: last.atrTrailingStop });
       const atrReclaimDaysAgo = detectAtrReclaim(atrHistory);
       const { rsiSignals } = detectRsiSignals(rsiHistory);
       const prevPrice = rows.length >= 2 ? rows[rows.length - 2].price : null;

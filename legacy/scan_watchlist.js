@@ -220,7 +220,7 @@ async function main() {
       // See lib/report.js for the full rationale behind these two independent signals.
       const macdHistory = data.macdHistory;
       const { macdSignals, positiveCrossDaysAgo, greenCrossDaysAgo, todayHistVal } =
-        detectMacdSignals(macdLineVal, macdHistory);
+        detectMacdSignals(macdLineVal, macdHistory, { price, atrTrailingStop: atr });
 
       const summary = generateSummary({ price, atr, ema200, rsi, macdHist, trend, htfTrend, momentum, divergence, volume });
 
