@@ -65,7 +65,7 @@ async function main() {
       const macdHistory = rows.slice(-7).map(r => ({ macd: r.macdLine, hist: r.histogram }));
       const rsiHistory = rows.slice(-7).map(r => ({ rsi: r.rsi }));
 
-      const { macdSignals } = detectMacdSignals(macdLineVal, macdHistory, { price: last.price, atrTrailingStop: last.atrTrailingStop });
+      const { macdSignals } = detectMacdSignals(macdLineVal, macdHistory, { price: last.price, atrTrailingStop: last.atrTrailingStop, adx: last.adx });
       const { rsiSignals } = detectRsiSignals(rsiHistory, { adx: last.adx });
       const prevPrice = rows.length >= 2 ? rows[rows.length - 2].price : null;
       const { volumeSignals } = detectVolumeSignals({ volumeRatio: last.volumeRatio, price, prevPrice });
@@ -76,12 +76,13 @@ async function main() {
       });
 
       // `trend`/`htfTrend` feed the console line and generateSummary()'s mixed-
-      // trend annotation, `volumeRatio` the Volume Surge report line. The
-      // indicator's remaining table cells (adx/score/signal/warning/momentum/
-      // volume) stay on the computeIndicators() row — the validated mirror of
-      // the TradingView table — and are deliberately not copied here.
+      // trend annotation, `volumeRatio` the Volume Surge report line, `adx`
+      // the MACD Green + Strong Trend confluence section. The indicator's
+      // remaining table cells (score/signal/warning/momentum/volume) stay on
+      // the computeIndicators() row — the validated mirror of the TradingView
+      // table — and are deliberately not copied here.
       const entry = {
-        symbol, date: last.date, price, atr, ema200, rsi, macdSignals, rsiSignals,
+        symbol, date: last.date, price, atr, ema200, rsi, adx: last.adx, macdSignals, rsiSignals,
         volumeSignals, volumeRatio: last.volumeRatio,
         trend: last.trend, htfTrend: last.htfTrend, summary,
       };

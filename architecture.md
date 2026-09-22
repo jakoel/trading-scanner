@@ -99,8 +99,8 @@ The MACD lookback (and, while it existed, the ATR Reclaim lookback) were origina
 
 | Signal | Condition |
 |--------|-----------|
-| ⚡ MACD TURNED GREEN | Histogram crossed from ≤0 to >0 on today's bar, **AND the MACD line is still negative**. The early-bottom case the section is named for. |
-| ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 on today's bar, **AND the histogram is positive** (line above its own signal line). A more mature momentum confirmation than TURNED GREEN. |
+| ⚡ MACD TURNED GREEN | Histogram crossed from ≤0 to >0 on today's bar, **AND the MACD line is still negative**. The early-bottom case the section is named for. No standalone Telegram section — see below. |
+| ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 on today's bar, **AND the histogram is positive** (line above its own signal line). A more mature momentum confirmation than TURNED GREEN. **Also requires ADX ≥ `MACD_STRONG_TREND_ADX`** (25) — see below. |
 | 📈 RSI RECLAIMED 30 | RSI crossed from ≤30 to >30 on today's bar (`detectRsiSignals()`) — fires once, the exact day it pops back out of oversold, not the day it dropped below 30 and not on subsequent days it happens to still be above 30. **Also requires ADX ≥ `RSI_RECLAIM_MIN_ADX`** (20) — see below. Telegram line includes the current RSI value. |
 | 📊 VOLUME SURGE | `volumeRatio` (today's volume vs 20-day average, from `lib/indicators.js`) is ≥ `VOLUME_SURGE_THRESHOLD` (1.75x), AND today's close is above yesterday's close (`detectVolumeSignals()`). Unlike every other signal here, this is a **state check, not an event** — it fires every day volume stays elevated on an up day, not just the first day, by design (sustained high-volume buying is itself noteworthy each day it continues). Note this is **not** the same knob as `volumeSurgeMultiplier` (1.5) in `lib/indicators.js`, which feeds the confluence score and the SURGE/ABOVE AVG cell and is held at the live Pine input's value — the report threshold was raised to 1.75 on 2026-08-12 to cut the fat tail of market-wide volume days (p90 dropped from 11 lines to 7, worst day from 45 to 33). Telegram line includes the volume ratio. |
 
@@ -115,6 +115,10 @@ The two MACD signals are now mutually exclusive by construction: TURNED GREEN re
 **MACD Green + Volume Surge confluence section.** Same-day `MACD TURNED GREEN` + `VOLUME SURGE`: the 4 occurrences logged in `data/signals.csv` since 2026-08-06 averaged +9.1% at 10 sessions, 100% win, which is what motivated shipping the section. A full recompute over `data/bars.db` history since then found 59 same-day occurrences and confirms the direction at a much larger sample: +3.85%/64% win at 10 sessions and +5.17%/58% win at 20, beating both legs alone (MACD Green alone: +3.05%/59%; Volume Surge alone: +2.79%/57%, both at 10d). `formatTelegramMessages()` breaks these out into their own `🔥 MACD Green + Volume Surge (Confluence)` section. Symbols in this section still also appear under the individual Volume Surge and MACD Turned Green sections — no section is exclusive of another.
 
 **RSI Reclaim + Volume Surge confluence section, at a tightened volume threshold.** Same-day `RSI RECLAIMED 30` + `VOLUME SURGE` at the standard 1.75x volume ratio: n=74 (10d +2.15%/61% win, 20d +7.03%/76% win) — already better than either leg alone. Sweeping the ratio cutoff on the same full-history recompute: 2.0x sharpens this to n=38 (10d +2.50%/68% win, 20d +7.69%/82% win) without the sample collapsing the way 2.5x does (n=11, 20d win drops to 64%). `RSI_VOLUME_COMBO_MIN_RATIO` (2.0, `lib/report.js`) gates the `🔥 RSI Reclaim + Volume Surge (Confluence)` section on this — a report-section-only threshold; the standalone `VOLUME SURGE` signal and its `data/signals.csv` log entry are unaffected and still use `VOLUME_SURGE_THRESHOLD` (1.75). Tried and rejected as filters on this combo: ADX ≥ 20 (barely moves it, since the combo is already ~90% ADX ≥ 20 by nature), above-EMA200 (shrinks to n=3, too small to trust), and adding MACD Green as a third leg (n=6, too small).
+
+**MACD Green has no standalone Telegram section.** Alone, MACD Green's win rate (52-61% depending on horizon) is weaker than either confluence section it feeds into, so as of 2026-09-22 it's dropped from the per-signal loop in `formatTelegramMessages()` — it only surfaces via `🔥 MACD Green + Volume Surge` or the new `🔥 MACD Green + Strong Trend` section below. The underlying `detectMacdSignals()` still tags every occurrence (needed for both combos, and for `data/signals.csv`, which still logs standalone `MACD TURNED GREEN` rows for research) — this is a display-only change, not a removal of the signal like ATR Reclaim's.
+
+**MACD Green + Strong Trend confluence section, and the same ADX gate on TURNED POSITIVE.** Recomputing over full `data/bars.db` history: `MACD TURNED POSITIVE` (already extension-gated) goes from n=437 (30d +9.06%/64% win) to n=43 with ADX ≥ 25 (30d +11.12%/79% win) — and unlike almost every other combo tested this session, the two halves of history barely diverge (77% vs 81% win at 30d), not a result carried by one bullish period. `MACD_STRONG_TREND_ADX` (25) gates `TURNED POSITIVE` directly on this. The same threshold, applied to `MACD TURNED GREEN` instead, surfaces the `🔥 MACD Green + Strong Trend (Confluence)` section: n=299-301 across horizons, 10d +4.62%/70% win, 30d +9.98%/70% win, the largest-sample combo found this session — though this one *does* show real regime skew between history's two halves (unlike the TURNED POSITIVE gate above), so read its win rate as "clearly better than MACD Green alone" rather than a precise, stable number. One constant, `MACD_STRONG_TREND_ADX`, covers both since the same MACD-momentum + ADX ≥ 25 relationship showed up independently for both signals. 25 is stricter than `RSI_RECLAIM_MIN_ADX` (20) — the data supported a tighter cutoff for these two specifically, not a case of picking a different number for the sake of it.
 
 VOLUME SURGE is the one exception to the event-not-state pattern used elsewhere in this file — a deliberate choice, not an oversight.
 
@@ -176,6 +180,10 @@ Sections always render in this order — the strongest, most actionable reads fi
 *SYMBOL* $price
   _above EMA200_
 
+*🔥 MACD Green + Strong Trend (Confluence):*
+*SYMBOL* $price
+  _above EMA200_
+
 *🔥 RSI Reclaim + Volume Surge (Confluence):*
 *SYMBOL* $price
   _above EMA200_
@@ -185,9 +193,6 @@ Sections always render in this order — the strongest, most actionable reads fi
 
 ⚡ MACD Turned Positive (Confirmed Positive Momentum):
 *MSFT* $390.00
-
-⚡ MACD Turned Green (Early Bottom, MACD Still Negative):
-*ZETA* $12.50
 
 📈 RSI Reclaimed 30 (Out of Oversold):
 *SYMBOL* $price (RSI xx.xx)
