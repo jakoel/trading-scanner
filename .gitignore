@@ -5,3 +5,7 @@ telegram.config.json
 research/research.db
 research/universe.db
 research/universe_features.db
+research/nasdaq100.db
+research/nasdaq100_features.db
+research/watchlist_qqq.db
+research/watchlist_qqq_features.db

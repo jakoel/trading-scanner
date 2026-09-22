@@ -28,13 +28,11 @@ For each symbol, `lib/indicators.js` reproduces the full indicator suite from th
 
 Stocks are grouped into sections:
 - **🔥 Bullish Divergence + Strong Trend (Confluence)** — the indicator's own bullish divergence flag firing with ADX ≥ 20 on the same day
-- **🔥 MACD Green + Volume Surge (Confluence)** — MACD Turned Green and Volume Surge (below) both firing for the same symbol on the same day
 - **🔥 MACD Green + Strong Trend (Confluence)** — MACD Turned Green firing with ADX ≥ 25 on the same day
-- **🔥 RSI Reclaim + Volume Surge (Confluence)** — RSI Reclaimed 30 firing with volume ≥2.0x its 20-day average on the same day
 - **⚡ MACD Turned Positive** — the MACD line itself crossed zero on today's bar *and* the histogram is positive *and* ADX ≥ 25 (a more mature momentum confirmation)
 - **📊 Volume Surge** — today's volume ≥1.75x its 20-day average on an up day (fires every day it stays elevated, not just once)
 
-MACD Turned Green and RSI Reclaimed 30 have no standalone sections — both are weaker alone than the confluence sections above, so they only surface there.
+MACD Turned Green has no standalone section — it's weaker alone than the confluence section above, so it only surfaces there. RSI Reclaimed 30 has no display at all currently (tested weak on broader markets beyond this watchlist — see `architecture.md`).
 
 See `architecture.md` for the full technical reference, including why a 5-trading-day lookback replaced the original single-bar magnitude thresholds.
 
