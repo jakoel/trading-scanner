@@ -38,12 +38,14 @@ Prints the report to stdout instead of posting it — bar data and `data/signals
 | `architecture.md` | Full technical reference |
 | `legacy/` | Original TradingView/CDP-based scanner — kept for local cross-checking against the live indicator, not used by automation. See `legacy/README` note in architecture.md. |
 | `reference/` | Raw Pine source (`macd.txt`, `indicatorSuite.txt`) that `lib/indicators.js` was ported from |
+| `research/` | Standalone signal-combo backtesting tooling, not part of the scan pipeline — see `research/README.md`. Findings/decisions from using it live in `architecture.md`, not there. |
 
 ## Adding new signals
 
 1. Check `architecture.md` for what `lib/indicators.js` already computes per bar
-2. Add detection logic in `lib/report.js` (shared by both scanners) so it stays consistent
-3. Either add to `generateSummary()` for inline summary text, or add a new section in `formatTelegramMessages()` for a dedicated report block
+2. Before trusting a threshold or combo idea, backtest it with `research/` (see `research/README.md`) — it can run against the watchlist's own history or a bigger universe (S&P 500, Nasdaq-100). **Always validate against the watchlist's own `data/bars.db` before shipping**, even if a combo was found on a broader dataset — one already burned us this session (see the Bullish Divergence removal in `architecture.md`).
+3. Add detection logic in `lib/report.js` (shared by both scanners) so it stays consistent
+4. Either add to `generateSummary()` for inline summary text, or add a new section in `formatTelegramMessages()` for a dedicated report block
 
 ## Using the legacy CDP scanner (optional, for cross-checking)
 
