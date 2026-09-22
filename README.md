@@ -27,12 +27,11 @@ For each symbol, `lib/indicators.js` reproduces the full indicator suite from th
 ## Telegram output
 
 Stocks are grouped into sections:
-- **🔥 Bullish Divergence + Strong Trend (Confluence)** — the indicator's own bullish divergence flag firing with ADX ≥ 20 on the same day
 - **🔥 MACD Green + Strong Trend (Confluence)** — MACD Turned Green firing with ADX ≥ 25 on the same day
 - **⚡ MACD Turned Positive** — the MACD line itself crossed zero on today's bar *and* the histogram is positive *and* ADX ≥ 25 (a more mature momentum confirmation)
 - **📊 Volume Surge** — today's volume ≥1.75x its 20-day average on an up day (fires every day it stays elevated, not just once)
 
-MACD Turned Green has no standalone section — it's weaker alone than the confluence section above, so it only surfaces there. RSI Reclaimed 30 has no display at all currently (tested weak on broader markets beyond this watchlist — see `architecture.md`).
+MACD Turned Green has no standalone section — it's weaker alone than the confluence section above, so it only surfaces there. RSI Reclaimed 30 and Bullish Divergence + Strong Trend have no display at all currently — both tested weak specifically on this watchlist's own symbols, despite looking strong on broader markets (Bullish Divergence) or the watchlist historically (RSI Reclaim + Volume Surge) — see `architecture.md`.
 
 See `architecture.md` for the full technical reference, including why a 5-trading-day lookback replaced the original single-bar magnitude thresholds.
 
