@@ -80,6 +80,33 @@ PYPL
 CEG
 BE
 
+# --- Added 2026-09-23: AI datacenter optics/networking, semis, quantum,
+# nuclear SMR, space, crypto mining, robotics/defense-tech ---
+AAOI
+CRDO
+LITE
+COHR
+CIEN
+FN
+ARM
+AEHR
+IONQ
+RGTI
+QBTS
+OKLO
+SMR
+ASTS
+LUNR
+MARA
+CLSK
+MOD
+SOUN
+BBAI
+KTOS
+KRKNF
+SERV
+SYM
+
 # --- Sector / thematic ETFs ---
 # Group-level trend reads on themes the single names above don't cover.
 # Robotics & industrial automation (adds Keyence, Fanuc, ABB, Yaskawa)
