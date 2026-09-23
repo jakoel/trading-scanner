@@ -107,6 +107,32 @@ KRKNF
 SERV
 SYM
 
+# --- Added 2026-09-23 (batch 2): EV/autonomous driving, AI server/interconnect
+# hardware, storage, power/grid equipment, nuclear fuel cycle, space, consumer
+# momentum, fintech ---
+RIVN
+LCID
+XPEV
+NIO
+MBLY
+ALAB
+SMCI
+CCJ
+TER
+PATH
+WDC
+STX
+ETN
+VST
+RDDT
+DUOL
+LEU
+RDW
+AFRM
+HOOD
+TLN
+NRG
+
 # --- Sector / thematic ETFs ---
 # Group-level trend reads on themes the single names above don't cover.
 # Robotics & industrial automation (adds Keyence, Fanuc, ABB, Yaskawa)
