@@ -16,7 +16,7 @@ import { dirname, join } from 'path';
 import { sendMessage } from './telegram.js';
 import { updateBars, latestStoredSessionDate } from './lib/bars.js';
 import { computeIndicators } from './lib/indicators.js';
-import { detectMacdSignals, detectRsiSignals, detectVolumeSignals, detectDivergenceSignals, detectFvgSignals, detectVwapSignals, generateSummary, formatTelegramMessages } from './lib/report.js';
+import { detectMacdSignals, detectRsiSignals, detectVolumeSignals, detectDivergenceSignals, detectFvgSignals, detectVwapSignals, detectFvgRsiConfluence, generateSummary, formatTelegramMessages } from './lib/report.js';
 import { logSignals } from './lib/signalLog.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -73,6 +73,10 @@ async function main() {
       // FVG/VWAP read raw OHLCV directly (not the indicator row) — see lib/fairValue.js.
       const { fvgSignals } = detectFvgSignals(bars, bars.length - 1);
       const { vwapSignals } = detectVwapSignals(bars, bars.length - 1);
+      // Windowed match (today +/- a few days) between FVG Retest and RSI
+      // Reclaim — needs the full bars/rows history, not just today's signal
+      // arrays, so it's computed separately from fvgSignals/rsiSignals above.
+      const fvgRsiConfluence = detectFvgRsiConfluence(bars, rows, rows.length - 1);
 
       const summary = generateSummary({
         price, atr, ema200, rsi,
@@ -83,13 +87,15 @@ async function main() {
       // trend annotation, `volumeRatio` the Volume Surge report line, `adx`
       // the MACD Green + Strong Trend confluence section, `rsiNum` (the raw
       // number, unlike the display-formatted `rsi` string) the RSI Overbought
-      // + VWAP Reclaim threshold check. The indicator's remaining table cells
-      // (score/signal/warning/momentum/volume) stay on the computeIndicators()
-      // row — the validated mirror of the TradingView table — and are
-      // deliberately not copied here.
+      // + VWAP Reclaim threshold check, `fvgRsiConfluence` the FVG Retest +
+      // RSI Reclaim section directly (already resolved to a boolean, unlike
+      // the other combos which filter on fvgSignals/rsiSignals at display
+      // time). The indicator's remaining table cells (score/signal/warning/
+      // momentum/volume) stay on the computeIndicators() row — the validated
+      // mirror of the TradingView table — and are deliberately not copied here.
       const entry = {
         symbol, date: last.date, price, atr, ema200, rsi, rsiNum: last.rsi, adx: last.adx, macdSignals, rsiSignals,
-        volumeSignals, divergenceSignals, fvgSignals, vwapSignals, volumeRatio: last.volumeRatio,
+        volumeSignals, divergenceSignals, fvgSignals, vwapSignals, fvgRsiConfluence, volumeRatio: last.volumeRatio,
         trend: last.trend, htfTrend: last.htfTrend, summary,
       };
       results.push(entry);

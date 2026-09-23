@@ -1,0 +1,422 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) https://creativecommons.org/licenses/by-nc-sa/4.0/
+// © LuxAlgo
+// Modified version. Changes: non-repainting HTF detection, time-anchored boxes, mitigation modes,
+// partial fills, live box extension, displacement/volume filters, rolling auto threshold,
+// inverse FVGs, consequent-encroachment lines, touch alerts, extended dashboard, record cap, bias panel.
+// Based on "Fair Value Gap [LuxAlgo]".
+//
+// Review for porting into watchlist-summary's daily-bar backtest suite
+// (lib/fairValue.js), Pine-only for now — nothing ported yet:
+//   1. Multi-zone tracking: already correct here (fvg_records tracks every
+//      unmitigated zone, not just the nearest) — lib/fairValue.js's current
+//      port only checks the nearest zone within a bounded lookback and stops
+//      at the first mitigated one, even if an older zone is still open. Fix
+//      needed on the JS side when this gets ported, not here.
+//   2/3. Displacement and volume filters were present but both defaulted to
+//      0 (off) — turned on below with real starting values.
+//   4. Mitigation Mode (Wick/Close/50%) already selectable; left at 'Close'
+//      since that's what lib/fairValue.js already ports and validates
+//      against — switch it manually on the chart to A/B the others.
+
+//@version=5
+indicator("Smart FVG Zones", "Smart FVG", overlay = true, max_lines_count = 500, max_boxes_count = 500)
+//------------------------------------------------------------------------------
+//Settings
+//-----------------------------------------------------------------------------{
+thresholdPer = input.float(0, "Threshold %", minval = 0, maxval = 100, step = .1, inline = 'threshold')
+auto         = input(false, "Auto", inline = 'threshold')
+autoLen      = input.int(100, "Auto Threshold Lookback", minval = 1)
+
+showLast         = input.int(0, 'Unmitigated Levels', minval = 0)
+mitigationLevels = input.bool(false, 'Mitigation Levels')
+mitMode          = input.string('Close', 'Mitigation Mode', options = ['Wick', 'Close', '50%'])
+
+tf = input.timeframe('', "Timeframe")
+
+//Filters
+// Displacement: require the impulse candle's body to be at least as big as
+// the recent average true range (1.0x ATR) — a conservative starting point
+// that filters out gaps formed by insignificant candles without being overly
+// restrictive. Not backtested against a specific number yet; tune from here.
+dispMult = input.float(1.0, 'Displacement (x ATR, 0 = off)', minval = 0, step = .1, group = 'Filters')
+atrLen   = input.int(14, 'ATR Length', minval = 1, group = 'Filters')
+// Volume: reuses VOLUME_SURGE_THRESHOLD (1.75x) from lib/report.js rather
+// than picking an unrelated number — that threshold is already validated in
+// this project's own Volume Surge signal, so starting from it here keeps any
+// future comparison between the two grounded in the same scale.
+volMult  = input.float(1.75, 'Volume (x SMA, 0 = off)', minval = 0, step = .1, group = 'Filters')
+volLen   = input.int(20, 'Volume SMA Length', minval = 1, group = 'Filters')
+
+//Features
+showIFVG    = input.bool(true, 'Inverse FVGs', group = 'Features')
+showCE      = input.bool(true, 'Consequent Encroachment (50%) Line', group = 'Features')
+partialFill = input.bool(true, 'Shrink Boxes on Partial Fill', group = 'Features')
+extendLive  = input.bool(true, 'Extend Boxes Until Mitigated', group = 'Features')
+maxTracked  = input.int(100, 'Max Tracked FVGs', minval = 1, maxval = 240, group = 'Features')
+
+//Style
+extend  = input.int(20, 'Extend', minval = 0, inline = 'extend', group = 'Style')
+dynamic = input(false, 'Dynamic', inline = 'extend', group = 'Style')
+
+bullCss     = input.color(color.new(#089981, 70), "Bullish FVG", group = 'Style')
+bearCss     = input.color(color.new(#f23645, 70), "Bearish FVG", group = 'Style')
+ifvgBullCss = input.color(color.new(#2962ff, 75), "Bullish IFVG", group = 'Style')
+ifvgBearCss = input.color(color.new(#ff9800, 75), "Bearish IFVG", group = 'Style')
+
+//Dashboard
+showDash = input(false, 'Show Dashboard', group = 'Dashboard')
+dashLoc  = input.string('Top Right', 'Location', options = ['Top Right', 'Bottom Right', 'Bottom Left'], group = 'Dashboard')
+textSize = input.string('Small', 'Size'        , options = ['Tiny', 'Small', 'Normal']                 , group = 'Dashboard')
+
+//-----------------------------------------------------------------------------}
+//UDT's
+//-----------------------------------------------------------------------------{
+type fvg
+    float max
+    float min
+    bool  isbull
+    int   t
+    int   born
+    bool  inverted = false
+    bool  touched  = false
+    box   area
+    line  ce
+
+//-----------------------------------------------------------------------------}
+//Methods/Functions
+//-----------------------------------------------------------------------------{
+method tosolid(color id)=> color.rgb(color.r(id), color.g(id), color.b(id))
+
+cssOf(bool isbull, bool inv)=>
+    inv ? (isbull ? ifvgBullCss : ifvgBearCss) : (isbull ? bullCss : bearCss)
+
+rightT()=> time + extend * timeframe.in_seconds() * 1000
+
+//o = offset: 0 on chart timeframe, 1 on higher timeframes (confirmed bar only)
+detect(int o)=>
+    rel     = (high - low) / low
+    autoThr = ta.sma(rel, autoLen)
+    atr     = ta.atr(atrLen)
+    volAvg  = ta.sma(volume, volLen)
+
+    threshold = auto ? nz(autoThr[o]) : thresholdPer / 100
+
+    dispOk = dispMult == 0 or math.abs(close[o+1] - open[o+1]) >= atr[o+1] * dispMult
+    volOk  = volMult == 0 or na(volume[o+1]) or volume[o+1] > volAvg[o+1] * volMult
+
+    bull = low[o] > high[o+2] and close[o+1] > high[o+2] and (low[o] - high[o+2]) / high[o+2] > threshold and dispOk and volOk
+    bear = high[o] < low[o+2] and close[o+1] < low[o+2] and (low[o+2] - high[o]) / high[o] > threshold and dispOk and volOk
+
+    top = bull ? low[o]    : bear ? low[o+2] : na
+    btm = bull ? high[o+2] : bear ? high[o]  : na
+
+    [bull, bear, top, btm, time[o+2]]
+
+newGap(float top, float btm, bool isbull, int t0, bool inv)=>
+    css = cssOf(isbull, inv)
+    box  b = na
+    line l = na
+    if not dynamic
+        b := box.new(t0, top, rightT(), btm, xloc = xloc.bar_time, border_color = na, bgcolor = css)
+        if showCE
+            mid = math.avg(top, btm)
+            l := line.new(t0, mid, rightT(), mid, xloc.bar_time, color = color.new(css.tosolid(), 40), style = line.style_dotted)
+    fvg.new(max = top, min = btm, isbull = isbull, t = t0, born = bar_index, inverted = inv, touched = false, area = b, ce = l)
+
+method destroy(fvg g)=>
+    if not na(g.area)
+        g.area.delete()
+    if not na(g.ce)
+        g.ce.delete()
+
+//-----------------------------------------------------------------------------}
+//FVG's detection/display
+//-----------------------------------------------------------------------------{
+var float max_bull_fvg = na, var float min_bull_fvg = na, var int bull_count = 0, var int bull_mitigated = 0
+var float max_bear_fvg = na, var float min_bear_fvg = na, var int bear_count = 0, var int bear_mitigated = 0
+var int bullMitBars = 0, var int bearMitBars = 0
+var int bull_touches = 0, var int bear_touches = 0
+var int lastT = 0
+
+var fvg_records = array.new<fvg>(0)
+
+//Non-repainting request
+tfr = tf == '' ? timeframe.period : tf
+htf = timeframe.in_seconds(tfr) > timeframe.in_seconds(timeframe.period)
+off = htf ? 1 : 0
+
+[d_bull, d_bear, d_top, d_btm, d_t0] = request.security(syminfo.tickerid, tfr, detect(off), lookahead = htf ? barmerge.lookahead_on : barmerge.lookahead_off)
+
+isNew = (d_bull or d_bear) and d_t0 != lastT and (htf or barstate.isconfirmed)
+
+//Bull FVG's
+if isNew and d_bull
+    if dynamic
+        max_bull_fvg := d_top
+        min_bull_fvg := d_btm
+    fvg_records.unshift(newGap(d_top, d_btm, true, d_t0, false))
+    bull_count += 1
+    lastT := d_t0
+else if dynamic
+    max_bull_fvg := math.max(math.min(close, max_bull_fvg), min_bull_fvg)
+
+//Bear FVG's
+if isNew and d_bear
+    if dynamic
+        max_bear_fvg := d_top
+        min_bear_fvg := d_btm
+    fvg_records.unshift(newGap(d_top, d_btm, false, d_t0, false))
+    bear_count += 1
+    lastT := d_t0
+else if dynamic
+    min_bear_fvg := math.min(math.max(close, min_bear_fvg), max_bear_fvg)
+
+//-----------------------------------------------------------------------------}
+//Mitigation, touches, partial fills
+//-----------------------------------------------------------------------------{
+pending = array.new<fvg>(0)
+
+if fvg_records.size() > 0
+    for i = fvg_records.size() - 1 to 0
+        g   = fvg_records.get(i)
+        mid = math.avg(g.max, g.min)
+        mitigated = false
+        prefix = g.inverted ? 'Inverse ' : ''
+
+        if g.isbull
+            src = mitMode == 'Wick' ? low : close
+            lvl = mitMode == '50%' ? mid : g.min
+            mitigated := src < lvl
+
+            if not g.touched and bar_index > g.born and low <= g.max and not mitigated
+                g.touched := true
+                bull_touches += 1
+                alert(prefix + 'Bullish FVG tapped on ' + syminfo.ticker + ': ' + str.tostring(g.min, format.mintick) + ' - ' + str.tostring(g.max, format.mintick), alert.freq_once_per_bar)
+        else
+            src = mitMode == 'Wick' ? high : close
+            lvl = mitMode == '50%' ? mid : g.max
+            mitigated := src > lvl
+
+            if not g.touched and bar_index > g.born and high >= g.min and not mitigated
+                g.touched := true
+                bear_touches += 1
+                alert(prefix + 'Bearish FVG tapped on ' + syminfo.ticker + ': ' + str.tostring(g.min, format.mintick) + ' - ' + str.tostring(g.max, format.mintick), alert.freq_once_per_bar)
+
+        if mitigated
+            lvlLine = g.isbull ? g.min : g.max
+            if mitigationLevels
+                line.new(g.t, lvlLine, time, lvlLine, xloc.bar_time, color = cssOf(g.isbull, g.inverted), style = line.style_dashed)
+
+            g.destroy()
+            fvg_records.remove(i)
+
+            if not g.inverted
+                if g.isbull
+                    bull_mitigated += 1
+                    bullMitBars += bar_index - g.born
+                else
+                    bear_mitigated += 1
+                    bearMitBars += bar_index - g.born
+
+                if showIFVG and not dynamic
+                    pending.push(newGap(g.max, g.min, not g.isbull, time, true))
+
+        else if not na(g.area)
+            if partialFill
+                if g.isbull
+                    g.area.set_top(math.max(math.min(g.area.get_top(), low), g.min))
+                else
+                    g.area.set_bottom(math.min(math.max(g.area.get_bottom(), high), g.max))
+            if extendLive
+                g.area.set_right(rightT())
+                if not na(g.ce)
+                    g.ce.set_x2(rightT())
+
+//Add inverse gaps after the loop so indices stay valid
+if pending.size() > 0
+    for p in pending
+        fvg_records.unshift(p)
+
+//Cap tracked records (keeps the loop fast and stays under drawing limits)
+while fvg_records.size() > maxTracked
+    fvg_records.pop().destroy()
+
+//-----------------------------------------------------------------------------}
+//Unmitigated lines
+//-----------------------------------------------------------------------------{
+var unmitigated = array.new<line>(0)
+
+if barstate.islast
+    for element in unmitigated
+        element.delete()
+    unmitigated.clear()
+
+    if showLast > 0 and fvg_records.size() > 0
+        for i = 0 to math.min(showLast - 1, fvg_records.size() - 1)
+            g   = fvg_records.get(i)
+            lvl = g.isbull ? g.min : g.max
+            unmitigated.push(line.new(g.t, lvl, time, lvl, xloc.bar_time, color = cssOf(g.isbull, g.inverted)))
+
+//-----------------------------------------------------------------------------}
+//Dashboard
+//-----------------------------------------------------------------------------{
+var table_position = dashLoc == 'Bottom Left' ? position.bottom_left
+  : dashLoc == 'Top Right' ? position.top_right
+  : position.bottom_right
+
+var table_size = textSize == 'Tiny' ? size.tiny
+  : textSize == 'Small' ? size.small
+  : size.normal
+
+var tb = table.new(table_position, 3, 5
+  , bgcolor = #1e222d
+  , border_color = #373a46
+  , border_width = 1
+  , frame_color = #373a46
+  , frame_width = 1)
+
+pct(int a, int b)=> b > 0 ? str.tostring(a * 100.0 / b, '#.#') + '%' : '-'
+avg(int a, int b)=> b > 0 ? str.tostring(a * 1.0 / b, '#.#') : '-'
+
+if showDash
+    if barstate.isfirst
+        tb.cell(1, 0, 'Bullish', text_color = bullCss.tosolid(), text_size = table_size)
+        tb.cell(2, 0, 'Bearish', text_color = bearCss.tosolid(), text_size = table_size)
+
+        tb.cell(0, 1, 'Count', text_size = table_size, text_color = color.white)
+        tb.cell(0, 2, 'Mitigated', text_size = table_size, text_color = color.white)
+        tb.cell(0, 3, 'Tapped', text_size = table_size, text_color = color.white)
+        tb.cell(0, 4, 'Avg Bars to Mit.', text_size = table_size, text_color = color.white)
+
+    if barstate.islast
+        tb.cell(1, 1, str.tostring(bull_count), text_color = bullCss.tosolid(), text_size = table_size)
+        tb.cell(2, 1, str.tostring(bear_count), text_color = bearCss.tosolid(), text_size = table_size)
+
+        tb.cell(1, 2, pct(bull_mitigated, bull_count), text_color = bullCss.tosolid(), text_size = table_size)
+        tb.cell(2, 2, pct(bear_mitigated, bear_count), text_color = bearCss.tosolid(), text_size = table_size)
+
+        tb.cell(1, 3, str.tostring(bull_touches), text_color = bullCss.tosolid(), text_size = table_size)
+        tb.cell(2, 3, str.tostring(bear_touches), text_color = bearCss.tosolid(), text_size = table_size)
+
+        tb.cell(1, 4, avg(bullMitBars, bull_mitigated), text_color = bullCss.tosolid(), text_size = table_size)
+        tb.cell(2, 4, avg(bearMitBars, bear_mitigated), text_color = bearCss.tosolid(), text_size = table_size)
+
+//-----------------------------------------------------------------------------}
+//Bias Panel
+//-----------------------------------------------------------------------------{
+showBias = input.bool(true, 'Show Bias Panel', group = 'Bias Panel')
+biasTf   = input.timeframe('240', 'Trend Timeframe (use higher than chart)', group = 'Bias Panel')
+biasLoc  = input.string('Bottom Right', 'Location', options = ['Top Right', 'Bottom Right', 'Bottom Left', 'Top Left'], group = 'Bias Panel')
+
+//Trend = price vs EMA 50 vs EMA 200 on the trend timeframe (confirmed bars only)
+[hClose, hFast, hSlow] = request.security(syminfo.tickerid, biasTf, [close[1], ta.ema(close, 50)[1], ta.ema(close, 200)[1]], lookahead = barmerge.lookahead_on)
+
+trendUp = hClose > hFast and hFast > hSlow
+trendDn = hClose < hFast and hFast < hSlow
+
+px(float v)=> na(v) ? '-' : str.tostring(v, format.mintick)
+
+var biasTb = table.new(biasLoc == 'Top Right' ? position.top_right
+  : biasLoc == 'Bottom Left' ? position.bottom_left
+  : biasLoc == 'Top Left' ? position.top_left
+  : position.bottom_right, 2, 6
+  , bgcolor = #1e222d
+  , border_color = #373a46
+  , border_width = 1
+  , frame_color = #373a46
+  , frame_width = 1)
+
+if showBias and barstate.islast
+    //Nearest support (bullish zone at/below price) and resistance (bearish zone at/above price)
+    float supTop = na
+    float supBtm = na
+    float resTop = na
+    float resBtm = na
+    for g in fvg_records
+        if g.isbull and g.min <= close and (na(supTop) or g.max > supTop)
+            supTop := g.max
+            supBtm := g.min
+        if not g.isbull and g.max >= close and (na(resBtm) or g.min < resBtm)
+            resTop := g.max
+            resBtm := g.min
+
+    inSup = not na(supTop) and close <= supTop
+    inRes = not na(resBtm) and close >= resBtm
+
+    string play   = 'NO TRADE - range, wait'
+    color  pCss   = color.gray
+    float  stop   = na
+    float  tgt    = na
+    bool   isLong = true
+
+    if trendUp and inSup and not inRes
+        play := 'BUY ZONE - look for longs'
+        pCss := bullCss.tosolid()
+        stop := supBtm
+        tgt  := resBtm
+    else if trendDn and inRes and not inSup
+        play   := 'SELL ZONE - look for shorts'
+        pCss   := bearCss.tosolid()
+        stop   := resTop
+        tgt    := supTop
+        isLong := false
+    else if trendUp and inRes
+        play := 'CAUTION - uptrend at resistance'
+        pCss := color.orange
+    else if trendDn and inSup
+        play := 'CAUTION - downtrend at support'
+        pCss := color.orange
+    else if trendUp
+        play := 'WAIT - pullback to support, then long'
+        pCss := color.new(bullCss.tosolid(), 30)
+    else if trendDn
+        play := 'WAIT - rally to resistance, then short'
+        pCss := color.new(bearCss.tosolid(), 30)
+
+    risk   = isLong ? close - stop : stop - close
+    reward = isLong ? tgt - close : close - tgt
+    rr     = risk > 0 and reward > 0 ? reward / risk : na
+
+    trendTxt = trendUp ? 'UPTREND' : trendDn ? 'DOWNTREND' : 'RANGE'
+    trendCss = trendUp ? bullCss.tosolid() : trendDn ? bearCss.tosolid() : color.gray
+    locTxt   = inSup and inRes ? 'Inside both zones' : inSup ? 'In support zone' : inRes ? 'In resistance zone' : 'Between zones'
+
+    biasTb.cell(0, 0, 'Trend (' + biasTf + ')', text_color = color.white, text_size = table_size)
+    biasTb.cell(1, 0, trendTxt, text_color = trendCss, text_size = table_size)
+    biasTb.cell(0, 1, 'Location', text_color = color.white, text_size = table_size)
+    biasTb.cell(1, 1, locTxt, text_color = color.white, text_size = table_size)
+    biasTb.cell(0, 2, 'Play', text_color = color.white, text_size = table_size)
+    biasTb.cell(1, 2, play, text_color = pCss, text_size = table_size)
+    biasTb.cell(0, 3, 'Stop', text_color = color.white, text_size = table_size)
+    biasTb.cell(1, 3, px(stop), text_color = color.white, text_size = table_size)
+    biasTb.cell(0, 4, 'Target', text_color = color.white, text_size = table_size)
+    biasTb.cell(1, 4, px(tgt), text_color = color.white, text_size = table_size)
+    biasTb.cell(0, 5, 'Reward:Risk', text_color = color.white, text_size = table_size)
+    biasTb.cell(1, 5, na(rr) ? '-' : str.tostring(rr, '#.##'), text_color = na(rr) ? color.white : rr >= 2 ? bullCss.tosolid() : color.orange, text_size = table_size)
+
+//-----------------------------------------------------------------------------}
+//Plots
+//-----------------------------------------------------------------------------{
+//Dynamic Bull FVG
+max_bull_plot = plot(max_bull_fvg, color = na, editable = false)
+min_bull_plot = plot(min_bull_fvg, color = na, editable = false)
+fill(max_bull_plot, min_bull_plot, color = bullCss)
+
+//Dynamic Bear FVG
+max_bear_plot = plot(max_bear_fvg, color = na, editable = false)
+min_bear_plot = plot(min_bear_fvg, color = na, editable = false)
+fill(max_bear_plot, min_bear_plot, color = bearCss)
+
+//-----------------------------------------------------------------------------}
+//Alerts
+//-----------------------------------------------------------------------------{
+alertcondition(bull_count > bull_count[1], 'Bullish FVG', 'Bullish FVG detected')
+alertcondition(bear_count > bear_count[1], 'Bearish FVG', 'Bearish FVG detected')
+
+alertcondition(bull_mitigated > bull_mitigated[1], 'Bullish FVG Mitigation', 'Bullish FVG mitigated')
+alertcondition(bear_mitigated > bear_mitigated[1], 'Bearish FVG Mitigation', 'Bearish FVG mitigated')
+
+alertcondition(bull_touches > bull_touches[1], 'Bullish FVG Tap', 'Price tapped into a bullish FVG')
+alertcondition(bear_touches > bear_touches[1], 'Bearish FVG Tap', 'Price tapped into a bearish FVG')
+
+//-----------------------------------------------------------------------------}

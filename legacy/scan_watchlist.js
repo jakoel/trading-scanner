@@ -230,7 +230,7 @@ async function main() {
       // FVG/VWAP-based (both need a trailing window of bars) — see architecture.md.
       // It also doesn't scrape ADX, so the Bullish Divergence + Strong Trend combo
       // (which requires it) can never fire here.
-      const entry = { symbol, price, atr, ema200, rsi, rsiNum: null, macdHist, macdLineVal, macdSignals, rsiSignals: [], volumeSignals: [], divergenceSignals: [], fvgSignals: [], vwapSignals: [], volumeRatio: null, trend, htfTrend, momentum, divergence, volume, summary };
+      const entry = { symbol, price, atr, ema200, rsi, rsiNum: null, macdHist, macdLineVal, macdSignals, rsiSignals: [], volumeSignals: [], divergenceSignals: [], fvgSignals: [], vwapSignals: [], fvgRsiConfluence: false, volumeRatio: null, trend, htfTrend, momentum, divergence, volume, summary };
       results.push(entry);
 
       const pct = ((price - atr) / atr * 100).toFixed(1);

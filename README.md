@@ -27,7 +27,7 @@ For each symbol, `lib/indicators.js` reproduces the full indicator suite from th
 ## Telegram output
 
 Stocks are grouped into sections:
-- **🔥 Bullish FVG Retest + RSI Reclaim (Confluence)** — a Fair Value Gap (3-candle price imbalance) getting retested and finding support, same symbol/window as RSI Reclaimed 30
+- **🔥 Bullish FVG Retest + RSI Reclaim (Confluence)** — a Fair Value Gap (3-candle price imbalance, filtered to displacement candles only) getting retested and finding support, within a few trading days of RSI Reclaimed 30 either direction
 - **🔥 MACD Green + Strong Trend (Confluence)** — MACD Turned Green firing with ADX ≥ 25
 - **🔥 MACD Green + RSI Reclaim (Confluence)** — MACD Turned Green and RSI Reclaimed 30, same symbol/window
 - **🔥 RSI Overbought + VWAP Reclaim (Momentum Continuation)** — RSI ≥ 70 with price reclaiming its rolling 20-day volume-weighted average price; a strength-confirming-strength read, not an oversold bounce like the others
