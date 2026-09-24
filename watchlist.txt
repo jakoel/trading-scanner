@@ -177,6 +177,12 @@ REMX
 LIT
 # Fintech — sector read complementing XYZ/PYPL/COIN/SOFI
 FINX
+# --- Added 2026-09-24: Major banks & financials, complements JPM/WFC ---
+AXP
+C
+BAC
+GS
+MS
 # S&P 500
 SPY 
 # NASDAQ
