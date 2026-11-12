@@ -7,9 +7,13 @@
  * research.db is gitignored and fully disposable: rerun this file any time
  * data/bars.db changes (new sessions, symbol additions) to refresh it.
  *
- * Usage: node research/build-cache.mjs [--bars-db=path] [--out=path]
- *   --bars-db  defaults to data/bars.db (the production watchlist history)
- *   --out      defaults to research/research.db
+ * Usage: node research/build-cache.mjs [--bars-db=path] [--out=path] [--horizons=5,10,20,30]
+ *   --bars-db   defaults to data/bars.db (the production watchlist history)
+ *   --out       defaults to research/research.db
+ *   --horizons  comma-separated forward-return horizons, in bars, not
+ *               calendar time — default is 5/10/20/30 daily bars ("sessions");
+ *               pass something like --horizons=3,5,10,15 for intraday bars
+ *               (e.g. 4H), where 30 bars is a much longer look-ahead than 30d.
  *   To cache a different universe (e.g. fetch-universe.mjs's output), pass
  *   --bars-db=research/universe.db --out=research/universe_features.db
  */
@@ -29,7 +33,7 @@ function argValue(name, fallback) {
 
 const SOURCE_DB = argValue('bars-db', join(__dirname, '..', 'data', 'bars.db'));
 const RESEARCH_DB = argValue('out', join(__dirname, 'research.db'));
-const HORIZONS = [5, 10, 20, 30];
+const HORIZONS = argValue('horizons', '5,10,20,30').split(',').map(Number);
 
 if (existsSync(RESEARCH_DB)) unlinkSync(RESEARCH_DB); // rebuilt fresh every run, cheap for ~40k rows
 

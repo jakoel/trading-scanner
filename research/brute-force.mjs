@@ -20,11 +20,14 @@
  * WINDOW=0 reduces to the old same-day-only behavior exactly.
  *
  * Usage: node research/build-cache.mjs   (run first, or after bars.db changes)
- *        node research/brute-force.mjs [--db=path] [--window=N]
- *   --db defaults to research/research.db; point it at whatever --out
- *   build-cache.mjs was given (e.g. research/universe_features.db) to run
- *   against a different cached universe.
- *   --window defaults to 3 trading days.
+ *        node research/brute-force.mjs [--db=path] [--window=N] [--horizons=5,10,20,30]
+ *   --db        defaults to research/research.db; point it at whatever --out
+ *               build-cache.mjs was given (e.g. research/universe_features.db)
+ *               to run against a different cached universe.
+ *   --window    defaults to 3 bars (same unit as --horizons below).
+ *   --horizons  must match whatever build-cache.mjs was run with — the two
+ *               scripts don't share state, so a mismatch fails with a "no
+ *               such column" SQL error rather than a silent bad result.
  */
 import { DatabaseSync } from 'node:sqlite';
 import { dirname, join } from 'path';
@@ -40,7 +43,8 @@ function argValue(name, fallback) {
 
 const RESEARCH_DB = argValue('db', join(__dirname, 'research.db'));
 const WINDOW = Number(argValue('window', '3'));
-const HORIZONS = [5, 10, 20, 30];
+const HORIZONS = argValue('horizons', '5,10,20,30').split(',').map(Number);
+const REF_HORIZON = HORIZONS[Math.floor(HORIZONS.length / 2)] ?? HORIZONS[0];
 const MIN_TOTAL = 40;   // minimum combined sample before a combo is even considered
 const MIN_HALF = 15;    // minimum sample within EACH half — below this a half's win rate is too noisy to judge
 const MIN_LIFT = 0.03;  // combo's total win rate must beat the better single leg by at least this many points
@@ -50,7 +54,7 @@ const db = new DatabaseSync(RESEARCH_DB);
 const cols = ['symbol', 'date', ...HORIZONS.map(n => `fwd${n}`), ...FLAG_NAMES.map(n => `f_${n}`)];
 const rows = db.prepare(`SELECT ${cols.join(', ')} FROM bar_features ORDER BY symbol, date`).all();
 console.log(`Loaded ${rows.length} bar-rows from research.db`);
-console.log(`Combo match window: +/-${WINDOW} trading days (same symbol), anchored on the later occurrence\n`);
+console.log(`Combo match window: +/-${WINDOW} bars (same symbol), anchored on the later occurrence\n`);
 
 // Grouped by symbol, each group already date-ordered (stable sort of a
 // symbol,date-ordered query) — needed so "N trading days apart" means N rows
@@ -104,9 +108,9 @@ for (const flag of FLAG_NAMES) {
   baselines[flag] = Object.fromEntries(HORIZONS.map(h => [h, statsFor(subset, `fwd${h}`)]));
 }
 
-console.log('=== SINGLE-FLAG BASELINES (10d) ===');
+console.log(`=== SINGLE-FLAG BASELINES (${REF_HORIZON} bars) ===`);
 for (const flag of FLAG_NAMES) {
-  const s = baselines[flag][10];
+  const s = baselines[flag][REF_HORIZON];
   const avgStr = s.avg != null ? `${(s.avg * 100).toFixed(2)}%` : '  -  ';
   const winStr = s.win != null ? `${(s.win * 100).toFixed(0)}%` : ' - ';
   console.log(`${flag.padEnd(22)} n=${String(s.n).padEnd(5)} avg=${avgStr.padEnd(8)} win=${winStr}`);
@@ -163,7 +167,7 @@ console.log(`\nAll ${results.length} tested combos written to combo_results (que
 
 for (const h of HORIZONS) {
   const top = passing.filter(r => r.horizon === h).sort((a, b) => b.total.win - a.total.win).slice(0, 10);
-  console.log(`\n=== TOP PASSING COMBOS @ ${h}d (ranked by combined win rate) ===`);
+  console.log(`\n=== TOP PASSING COMBOS @ ${h} bars (ranked by combined win rate) ===`);
   if (!top.length) { console.log('  (none passed)'); continue; }
   for (const r of top) {
     const label = `${r.flagA} + ${r.flagB}`;

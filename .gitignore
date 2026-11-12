@@ -9,3 +9,5 @@ research/nasdaq100.db
 research/nasdaq100_features.db
 research/watchlist_qqq.db
 research/watchlist_qqq_features.db
+research/*.db
+research/.out_*
