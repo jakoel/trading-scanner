@@ -99,13 +99,13 @@ The MACD lookback (and, while it existed, the ATR Reclaim lookback) were origina
 
 | Signal | Condition |
 |--------|-----------|
-| ⚡ MACD TURNED GREEN | Histogram crossed from ≤0 to >0 on today's bar, **AND the MACD line is still negative**. The early-bottom case the section is named for. No standalone Telegram section — see below. |
-| ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 on today's bar, **AND the histogram is positive** (line above its own signal line). A more mature momentum confirmation than TURNED GREEN. **Also requires ADX ≥ `MACD_STRONG_TREND_ADX`** (25) — see below. |
-| 📈 RSI RECLAIMED 30 | RSI crossed from ≤30 to >30 on today's bar (`detectRsiSignals()`) — fires once, the exact day it pops back out of oversold, not the day it dropped below 30 and not on subsequent days it happens to still be above 30. **Also requires ADX ≥ `RSI_RECLAIM_MIN_ADX`** (20) — see below. No standalone Telegram section — see below. |
-| 📊 VOLUME SURGE | `volumeRatio` (today's volume vs 20-day average, from `lib/indicators.js`) is ≥ `VOLUME_SURGE_THRESHOLD` (1.75x), AND today's close is above yesterday's close (`detectVolumeSignals()`). Unlike every other signal here, this is a **state check, not an event** — it fires every day volume stays elevated on an up day, not just the first day, by design (sustained high-volume buying is itself noteworthy each day it continues). Note this is **not** the same knob as `volumeSurgeMultiplier` (1.5) in `lib/indicators.js`, which feeds the confluence score and the SURGE/ABOVE AVG cell and is held at the live Pine input's value — the report threshold was raised to 1.75 on 2026-08-12 to cut the fat tail of market-wide volume days (p90 dropped from 11 lines to 7, worst day from 45 to 33). Telegram line includes the volume ratio. |
-| 🔥 BULLISH FVG FORMED / RETEST | `lib/fairValue.js`'s `detectFvgSignals()` — a Fair Value Gap (3-candle price imbalance) ported from LuxAlgo's public Pine indicator, and its retest (price returning to an unfilled gap and finding support). Not part of `lib/indicators.js`. **Gap formation also requires a displacement filter** (`FVG_DISPLACEMENT_ATR_MULT`, 1.0x ATR(14) on the impulse candle) — see below, including why this is a provisional, not fully cross-validated default. Only RETEST is used in a shipped combo (via a windowed match, not same-day — see below); FORMED is logged but not displayed. |
-| 🔥 VWAP RECLAIM | `lib/fairValue.js`'s `detectVwapSignals()` — price crossing back above a rolling 20-day volume-weighted average price (a daily-bar stand-in for intraday VWAP; see below for why). |
-| 🔥 BULLISH DIVERGENCE (Strong Trend) | `indicators.js`'s own `row.divergence === 'BULLISH DIV'` (already pivot-confirmed on this exact bar — no separate crossover check needed, see the Indicator Port section above), **AND ADX ≥ `BULLISH_DIV_MIN_ADX`** (20) — see below. Only ever surfaces as a confluence section, no standalone display. |
+| ⚡ MACD TURNED GREEN | Histogram crossed from ≤0 to >0 on today's bar, **AND the MACD line is still negative**. The early-bottom case the section is named for. No standalone Telegram section; it surfaces only inside 🔥 MACD Green + Strong Trend, once per episode — see "2026-11-12 reassessment" below. |
+| ⚡ MACD TURNED POSITIVE | The MACD line itself crossed from ≤0 to >0 on today's bar, **AND the histogram is positive** (line above its own signal line). A more mature momentum confirmation than TURNED GREEN. **Also requires ADX ≥ `MACD_STRONG_TREND_ADX`** (25) — see below. **Section hidden 2026-11-12** (see the reassessment below); still detected and logged. |
+| 📈 RSI RECLAIMED 30 | RSI crossed from ≤30 to >30 on today's bar (`detectRsiSignals()`) — fires once, the exact day it pops back out of oversold, not the day it dropped below 30 and not on subsequent days it happens to still be above 30. **Also requires ADX ≥ `RSI_RECLAIM_MIN_ADX`** (20) — see below. No standalone section; shows as an "also RSI reclaimed 30" marker on MACD Green names. |
+| 📊 VOLUME SURGE | `volumeRatio` (today's volume vs 20-day average, from `lib/indicators.js`) is ≥ `VOLUME_SURGE_THRESHOLD` (1.75x), AND today's close is above yesterday's close (`detectVolumeSignals()`). Unlike every other signal here, this is a **state check, not an event** — it fires every day volume stays elevated on an up day, not just the first day, by design (sustained high-volume buying is itself noteworthy each day it continues). Note this is **not** the same knob as `volumeSurgeMultiplier` (1.5) in `lib/indicators.js`, which feeds the confluence score and the SURGE/ABOVE AVG cell and is held at the live Pine input's value — the report threshold was raised to 1.75 on 2026-08-12 to cut the fat tail of market-wide volume days (p90 dropped from 11 lines to 7, worst day from 45 to 33). Telegram line included the volume ratio. **No longer displayed as of 2026-11-12** (no edge over the average stock — see the reassessment below); still detected and logged. |
+| 🔥 BULLISH FVG FORMED / RETEST | `lib/fairValue.js`'s `detectFvgSignals()` — a Fair Value Gap (3-candle price imbalance) ported from LuxAlgo's public Pine indicator, and its retest (price returning to an unfilled gap and finding support). Not part of `lib/indicators.js`. **Gap formation also requires a displacement filter** (`FVG_DISPLACEMENT_ATR_MULT`, 1.0x ATR(14) on the impulse candle) — see below, including why this is a provisional, not fully cross-validated default. Neither is displayed as of 2026-11-12 (the FVG Retest + RSI Reclaim combo was hidden — see the reassessment below); both are still detected and logged. |
+| 🔥 VWAP RECLAIM | `lib/fairValue.js`'s `detectVwapSignals()` — price crossing back above a rolling 20-day volume-weighted average price (a daily-bar stand-in for intraday VWAP; see below for why). Only ever displayed inside the RSI ≥ 70 combo, which was hidden 2026-11-12; still logged. |
+| 🔥 BULLISH DIVERGENCE (Strong Trend) | `indicators.js`'s own `row.divergence === 'BULLISH DIV'` (already pivot-confirmed on this exact bar — no separate crossover check needed, see the Indicator Port section above), **AND ADX ≥ `BULLISH_DIV_MIN_ADX`** (20) — see below. Shown as 🔥 Bullish Divergence + Strong Trend (Confluence) — reinstated 2026-11-12, see below. |
 
 The two MACD signals are now mutually exclusive by construction: TURNED GREEN requires a negative MACD line and TURNED POSITIVE requires a positive one. The `macdLineVal < 0` gate on TURNED GREEN is what makes the signal mean something. Ungated, a histogram crossing up while the line is already positive is ordinary re-acceleration inside an existing uptrend, and in a broad bounce it fires across the whole list at once — 47 of 91 symbols on 2026-08-05, i.e. a signal firing on half the watchlist, which says nothing beyond "the market went up". Those names still surface under TURNED POSITIVE on the day their line actually crosses zero.
 
@@ -117,7 +117,7 @@ The two MACD signals are now mutually exclusive by construction: TURNED GREEN re
 
 **MACD Green has no standalone Telegram section.** Alone, its win rate (52-61% depending on horizon) is weaker than the confluence section it feeds into, so as of 2026-09-22 it's dropped from the per-signal loop in `formatTelegramMessages()` — it only surfaces via `🔥 MACD Green + Strong Trend`. `detectMacdSignals()` still tags every occurrence (needed for that combo, and `data/signals.csv` still logs standalone `MACD TURNED GREEN` rows for research) — this is a display-only change, not a removal of the signal like ATR Reclaim's.
 
-**RSI Reclaimed 30 and Bullish Divergence + Strong Trend have no Telegram display at all, standalone or combo, as of 2026-09-22** — see the two "Removed" sections below. `detectRsiSignals()`/`detectDivergenceSignals()` still tag every occurrence of both for `data/signals.csv` logging.
+**(Superseded 2026-11-12: Bullish Divergence + Strong Trend is a report section again, and RSI Reclaimed 30 shows as a marker on MACD Green names — see the reassessment below.) RSI Reclaimed 30 and Bullish Divergence + Strong Trend had no Telegram display at all, standalone or combo, as of 2026-09-22** — see the two "Removed" sections below. `detectRsiSignals()`/`detectDivergenceSignals()` still tag every occurrence of both for `data/signals.csv` logging.
 
 ### Removed: MACD Green + Volume Surge, and RSI Reclaim + Volume Surge confluence sections
 
@@ -134,7 +134,9 @@ Both went weak-to-flat, sometimes worse than a coin flip (MACD Green + Volume Su
 
 Before removing, a dozen candidate fixes were tried on each (ADX gates at 20/25, a higher volume-ratio cutoff, RSI-50 cross, ATR reclaim same day, above-EMA200, a third confluence leg) across all four datasets, looking for something that would behave the way `bullFading` did for MACD Positive (see the follow-up MACD Positive research below) — consistently better everywhere. None did; every candidate helped on some datasets and hurt on others, or collapsed the sample to single digits with untrustworthy swings. Concluded these are watchlist-specific artifacts (or plain small-sample overfitting), not fixable interactions, and removed both sections. `RSI_VOLUME_COMBO_MIN_RATIO` (the report-section-only volume threshold this combo used) was deleted along with it.
 
-### Removed: Bullish Divergence + Strong Trend confluence section
+### Removed 2026-09-22, reinstated 2026-11-12: Bullish Divergence + Strong Trend confluence section
+
+*Reinstated 2026-11-12 — the removal below judged it on absolute win rate; scored against the same-day average stock it was the most consistent signal in the log. See the reassessment below. What follows is the original removal write-up, kept for the history.*
 
 This one's discovery story is the opposite of the two above, which is exactly why it took longer to catch. `indicators.js`'s pivot-confirmed bullish divergence flag (`row.divergence === 'BULLISH DIV'`) had never been wired into any signal before this session — see "Momentum and Volume cells" below for the sibling story of *why* some indicator fields go unused. Found by running `research/brute-force.mjs` against the S&P 500 (503 symbols, 200 trading days each, `research/universe.db`): paired with ADX ≥ 20, n=157 at 20 sessions (+4.05%/71% win), n=144 at 30 (+5.68%/70% win) — beating both legs alone and, unusually, getting *stronger* in the more recent half of that dataset's history rather than weaker. It then replicated on Nasdaq-100/QQQ (80%/73% win) and the combined watchlist+QQQ set (72%/64% win) — three independent broader datasets all agreeing, the strongest cross-validation of anything found this session. Shipped on that basis.
 
@@ -202,6 +204,46 @@ The legacy CDP scanner never could compute this anyway, since CDP only exposes t
 
 It deliberately ignores the indicator's Momentum and Volume cells. Both were once wired in — `momentum === 'FADING'` → "momentum fading" and `volume.includes('HIGH')` → "high volume" — and neither could ever match: `indicatorSuite.txt:583` emits `ACCELERATING`/`DECELERATING`/`STABLE` for Momentum (`FADING` appears only in the Warning cell, as `↓ BULL FADING`), and `:589` emits `SURGE`/`ABOVE AVG`/`LOW`/`AVERAGE` for Volume. Verified dead across all 36,341 bars in `data/bars.db`, and dead in the legacy CDP scanner too, since it scrapes the same table. They were deleted rather than repaired: `DECELERATING` covers ~20 of 91 symbols on a typical bar and volume surges already have their own section, so "fixing" them would have re-added noise the single-bar signal gating removed.
 
+### 2026-11-12 reassessment: what the report shows now, and why
+
+Replayed the exact production rules (`lib/report.js`'s own detectors) over `data/bars.db` from 2026-02-02 and scored every signal on what price did **10, 15 and 20 sessions (2-4 weeks)** later, as **excess return over the same-day average watchlist stock**. Raw win rate was the wrong yardstick here: the watchlist is high-beta, and from 2026-09-23 to 2026-11-11 the average stock fell 5.5% / 8.7% / 11.1% over 10 / 15 / 20 sessions with only 26-32% of stocks up (QQQ -14.8% peak to trough, 2026-10-06 to 2026-11-05; the share of the watchlist above its 50-day average fell from 69% to 17%). Re-runnable with `node research/reassess.mjs`. The replay reproduces `data/signals.csv` exactly for every date since 2026-09-23 (e.g. 268/268 FVG Retest rows), so it scores what the scanner really said.
+
+Repeats are collapsed to **episodes** (a stock re-firing within `GREEN_EPISODE_COOLDOWN` = 10 sessions of its previous firing is the same episode, scored on its first day). By that definition 42% of the 1,848 rows in `signals.csv` were repeats (FVG Retest 71%, MACD Green 42%, RSI Reclaimed 30 41%, VWAP Reclaim 37%, Volume Surge 33%).
+
+| Section | Episodes (10/15/20d) | Excess vs average stock (10/15/20d) | 15d excess: before logging / live in-sample / out of sample | Decision |
+|---|---|---|---|---|
+| Bullish Divergence + Strong Trend | 111 / 110 / 109 | **+2.5% ▲ / +3.0% ▲ / +2.5%** | +3.1% (71) / +2.7% (27) / +3.5% (12) | **Reinstated** |
+| MACD Green + Strong Trend | 211 / 191 / 187 | **+1.9% ▲ / +1.0% / +1.9%** | +0.6% (125) / +1.1% (42) / +2.9% (24) | **Kept**, once per episode, absorbs Green + RSI |
+| Volume Surge | 488 / 481 / 470 | +0.1% / +0.4% / +0.4% | +0.6% / +0.5% / -1.7% | **Removed from report** (65% of all lines, no edge) |
+| FVG Retest + RSI Reclaim | 14 / 14 / 14 | -0.9% / -3.2% ▼ / -2.0% | -2.7% (13) / - / -10.2% (1) | **Hidden** |
+| RSI ≥ 70 + VWAP Reclaim | 2 / 2 / 2 | too few | - | **Hidden** (fired 3 times in 82 sessions) |
+| MACD Turned Positive | 17 / 16 / 14 | -4.3% / +0.6% / -2.4% | -1.3% (14) / - / +14.6% (2) | **Hidden** (fired 5 times in 82 sessions) |
+
+▲/▼ = 90% date-cluster bootstrap interval excludes zero. The bar for trusting a signal is the **same sign in all three independent windows**, not a single ▲: six sections x three horizons x four windows will throw up a few "significant" cells by chance. Only Divergence and Green + Strong Trend clear it.
+
+What changed in the report:
+- **Volume Surge removed.** Detection and logging stay; research keeps scoring it.
+- **MACD Green + RSI Reclaim folded into MACD Green + Strong Trend.** 17 of its 18 lines were already listed under Green + Strong Trend; those names now carry an "also RSI reclaimed 30" marker. Only the RSI-reclaimed slice looked better (n=17 pooled, 15d excess +3.4% ▲), but too few to justify its own section.
+- **Green is listed once per episode.** 21% of its 141 lines in the live period were the same stock re-firing within 10 sessions. 141 firings became 112 listed lines.
+- **Bullish Divergence + Strong Trend reinstated**, listed first (larger measured edge).
+- **FVG + RSI, RSI ≥ 70 + VWAP, MACD Turned Positive hidden**, not deleted: `detectFvgRsiConfluence`, `VWAP_RSI_OVERBOUGHT_THRESHOLD` and the TURNED POSITIVE gates stay so `research/reassess.mjs` can keep scoring them and a section can come back with a few lines in `formatTelegramMessages()`.
+- Report volume over the live period: **502 lines -> 162** (median 1 line a day, max 14).
+
+Findings worth keeping:
+- **The edge is relative strength, not "price goes up".** Out of sample both kept sections lost money in absolute terms (Green -4.2% at 10d, Divergence -4.5% at 20d) while beating an average stock that lost 5.5% / 11.1%. Do not read "+2% excess" as a forecast of a rising price.
+- **Two sections were the same bug as the FVG one.** MACD Green + RSI Reclaim and RSI ≥ 70 + VWAP Reclaim required a same-day match, but their backtests (and the comments in `report.js`) used a +/-3 day window, so they fired 18 and 3 times in 82 sessions. Widening Green + RSI to +/-3 days was tested (45 / 32 / 30 episodes) and was not clearly better (15d excess -1.1% before live logging), so it stays same-day and is now a marker.
+- **The FVG displacement filter does not help on daily bars.** Unfiltered (+/-3 day window, 59 episodes pooled): excess -0.2% / -0.5% / +0.6%; filtered (14 episodes): -0.9% / -3.2% / -2.0%. Neither beats the average stock. The 4H research (`research/fetch-4h-watchlist.mjs`) is a different timeframe and is not contradicted.
+- **Expect large swings after any signal.** Within 20 sessions 60-75% of signals fell more than 5% at some point and about 70% rose more than 5%; average worst -9% to -12%, average best +11% to +13%.
+- **Buying the next open instead of the signal-day close** changed 15d results by at most 0.6 points, except Volume Surge (-1.0).
+
+Caveats on this analysis: the only clean out-of-sample window is 2026-09-23 onward — one correction, with signals clustered on few dates — and signals after about 2026-10-14 have no 20-session outcome yet. Everything before 2026-09-23 is in-sample for the thresholds.
+
+**Quiet days are normal now.** With these sections, 23 of the 82 sessions to 2026-11-11 (28%) have nothing to report and `scan_headless.js` sends no message (it was 4 of 82). A silent chat is not an outage; the outage signal is the `::warning::Stale scan` annotation on the Actions run.
+
+**Re-check due ~2026-12-10**, when there are four more weeks of out-of-sample outcomes: run `node research/reassess.mjs`. Bring a hidden section back only if its 15d excess is positive in all three windows with at least 10 episodes in each; drop a shown section if its pooled 15d interval is below zero and its out-of-sample excess is negative.
+
+**Same-day follow-up — a broader test did not confirm the edge.** `research/discover.mjs` re-scored the two shown sections plus 22 new daily ideas (relative strength vs SPY, cross-sectional momentum rank, volatility squeeze, trend pullbacks, 126/252-day highs, gap-and-hold, accumulation/money flow, MFI/Stochastic/CCI/RSI(2)/Aroon/PSAR/Ichimoku) on ~540 sessions of the S&P 500 (498 stocks) and of the watchlist (153), with the same excess-over-average-stock yardstick, a Benjamini-Hochberg correction across all 26 signals, and the rule that a winner must be positive in all three time thirds of both universes. **No signal passes — new or shipped.** On the S&P 500, 15d excess: Bullish Divergence +0.6% (q=0.71; thirds -0.7/+0.8/+1.3), MACD Green +0.3% (q=0.75; -0.5/-0.0/+1.5); best new idea (126-day high on 1.5x volume) +0.9%, q=0.36, negative in the most recent third in both universes. The watchlist-only Feb-Nov 2026 result for Divergence (+3.5%, q=0.18) is the same "strong on the watchlist, weak on the broader market" pattern this file has documented before; Divergence was also negative on the watchlist in its earliest third (-4.5%, n=23). Calibration: 40 random signals produce up to +/-0.9% 15d excess on the S&P and +/-2.75% on the watchlist by chance alone, and a signal that peeks 15 days ahead lights up at +8.1% in every third, so the harness detects real edge when it exists. No regime gate (SPY above its 50/200-day average, breadth, SPY volatility) helped consistently — the effect flips sign between the two universes — and no pair of signals reached q < 0.68. **Treat both shown sections as watchlist-observed, unproven leads, not validated edges.** The removals (Volume Surge, the empty combo sections) and the de-duplication stand on noise and redundancy alone. Not yet re-scored this way: the 4H signals in `final.pine`.
+
 `getActiveSignals(r)` is the single source of truth for which signals are "firing" on a result entry — both `formatTelegramMessages()` and `lib/signalLog.js` use it, so the Telegram report and the historical signal log can never drift apart.
 
 ## Historical Signal Log (`lib/signalLog.js`)
@@ -231,31 +273,19 @@ The guard is on the symptom, not the cause — whatever makes a run land on an a
 
 The message carries no title or date line — it opens directly on the first populated section. It always arrives pre-market on a weekday and always summarizes the last completed session (so a Monday message covers Friday), which makes the session unambiguous from context; a date line would only add noise. Don't "fix" this by adding one.
 
-Sections always render in this order — the strongest, most actionable reads first, then the momentum shifts, then the oversold bounce:
+Two sections, always in this order (the one with the larger measured edge over the average stock first):
 
 ```
-*🔥 Bullish FVG Retest + RSI Reclaim (Confluence):*
+*🔥 Bullish Divergence + Strong Trend (Confluence):*
 *SYMBOL* $price
-  _above EMA200_
+  _summary_
 
 *🔥 MACD Green + Strong Trend (Confluence):*
-*SYMBOL* $price
-  _above EMA200_
-
-*🔥 MACD Green + RSI Reclaim (Confluence):*
-*SYMBOL* $price
-  _above EMA200_
-
-*🔥 RSI Overbought + VWAP Reclaim (Momentum Continuation):*
-*SYMBOL* $price
-  _above EMA200_
-
-📊 Volume Surge:
-*SYMBOL* $price (N.NNx avg vol)
-
-⚡ MACD Turned Positive (Confirmed Positive Momentum):
-*MSFT* $390.00
+*SYMBOL* $price · also RSI reclaimed 30
+  _summary_
 ```
+
+The "also RSI reclaimed 30" marker flags Green names that also reclaimed RSI 30 the same day (the old standalone Green + RSI section). A stock is listed under Green once per episode: if it already fired in the previous 10 sessions it is suppressed here and still logged. FVG + RSI, RSI Overbought + VWAP, Volume Surge and MACD Turned Positive were taken out of the report on 2026-11-12 — see the reassessment above. On a day with nothing in either section no message is sent at all.
 
 Empty sections are skipped entirely, so the message opens on whichever of these is first populated. Within a section, symbols are sorted alphabetically (see `formatTelegramMessages()`), so a symbol keeps its position from one day's message to the next.
 
@@ -302,3 +332,4 @@ The workflow needs **Settings → Actions → General → Workflow permissions �
 - Yahoo Finance is unofficial/unauthenticated — if it ever breaks, Stooq (free, no key, EOD CSV) is the fallback data source to switch `lib/bars.js` to.
 - `V` (Visa) appears twice in `watchlist.txt` — both entries share one row set for `symbol = 'V'`, this is expected, not a bug.
 - The legacy CDP scanner's `TURNED GREEN`/`TURNED POSITIVE` detection historically sourced its crossover *history* from `CM_MacD_Ult_MTF` (SMA signal) rather than the actual Momentum Pro indicator (EMA signal), because only `CM_MacD_Ult_MTF` exposed real per-bar history via `plots()` at the time. This means the legacy scanner and the headless scanner can occasionally disagree on marginal, near-zero histogram cases (seen with NVO) — the headless version is the more correct one, since it computes true history directly from the actual production indicator's own formula.
+- The legacy CDP scanner can't feed either remaining report section (it has no ADX and no divergence history), so since 2026-11-12 it never produces a Telegram report. It's still useful for cross-checking `lib/indicators.js` values, nothing else.
