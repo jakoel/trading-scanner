@@ -24,16 +24,20 @@ function loadConfig() {
 export async function sendMessage(text, parseMode = 'Markdown') {
   const { botToken, chatId } = loadConfig();
   const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: parseMode,
-    }),
-  });
-  const data = await resp.json();
+  const body = JSON.stringify({ chat_id: chatId, text, parse_mode: parseMode });
+  // Retry network-level failures ("fetch failed") and 5xx/429 — a single
+  // transient blip shouldn't fail the whole scan job.
+  let data;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      data = await resp.json();
+      if (data.ok || (resp.status < 500 && resp.status !== 429) || attempt >= 4) break;
+    } catch (e) {
+      if (attempt >= 4) throw new Error(`Telegram request failed after ${attempt} attempts: ${e.message}${e.cause ? ` (${e.cause.code || e.cause.message})` : ''}`);
+    }
+    await new Promise(r => setTimeout(r, attempt * 3000));
+  }
   if (!data.ok) throw new Error(`Telegram API error: ${data.description}`);
   return data.result;
 }
