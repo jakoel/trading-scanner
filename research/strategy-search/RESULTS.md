@@ -117,3 +117,57 @@ hourly limit), so very few independent dips.
 - Validate the dip rule on `data/bars.db` (the production watchlist alone) before
   any Telegram use, per the CLAUDE.md rule. Not done here.
 - Try a de-survivored universe if a delisted-symbols source is available.
+
+---
+
+# Part 2 — portfolio-level tests (2026-11-18)
+
+Per-signal statistics above ignore position caps and clustering. `portfolio.mjs`
+(563 symbols, K equal slots, next-open fills, 0.05%/side) and `rotation.mjs`
+(47 ETFs, monthly) judge strategies the way a TradingView strategy report does.
+Window 2017-07 → 2026-11; train/val/test = 60/20/20 of the date range.
+
+| Strategy | CAGR | Sharpe | Max DD | Test CAGR |
+|---|---|---|---|---|
+| **SPY buy & hold** | 12.5% | 0.73 | −34% | 12.1% |
+| Equal-weight universe (survivor-biased) | 16.2% | 0.87 | −38% | 15.9% |
+| SPY only above 200d | 7.6% | 0.66 | −21% | 8.2% |
+| **A. Dip bounce** (SPY RSI<40 + trigger), K=10, best of 6 variants | 4.3% | 0.31 | −53% | 10.1% |
+| Dip bounce, any variant (K=5/10/20, 3 exits) | −0.4% … 4.6% | 0.05 … 0.35 | −30% … −55% | |
+| SPY + dip overlay (idle cash in SPY), best | 13.9% | 0.67 | −53% | 16.7% |
+| **C. RSI(2)<10 pullback in above-200d stocks** | 4.4% … 12.2% | 0.35 … 0.63 | −29% … −36% | −11% … +21% |
+| **B. 12-1 momentum, top 10–40 stocks, monthly** | 28% … 50% | 0.93 … 1.15 | −40% … −48% | 31% … 72% |
+| **ETF rotation, best (top-3, 12-1 momentum)** | 17.4% | 0.71 | −35% | 20.1% |
+| ETF rotation, other scores / K / filters | −6% … 15% | −0.06 … 0.72 | −31% … −72% | |
+
+## Reading it
+
+1. **The dip bounce does not work as a portfolio.** +1% per signal does not
+   survive position caps: dips cluster, positions pile in together and take
+   the same crash. 0–5% CAGR, drawdowns 30–55%. Adding it on top of SPY lowers
+   Sharpe (0.67 vs 0.73) and deepens drawdown (−53% vs −34%). (An earlier run on
+   60 symbols looked better — a sign of how fragile it is to the universe.)
+2. **RSI(2) pullbacks** are the same story as the web research found for
+   indices: ~63–65% win rate, tiny edge per trade, trails buy-and-hold.
+3. **Stock momentum looks spectacular and is the least trustworthy number
+   here.** The universe is *today's* index members plus a watchlist chosen with
+   hindsight; 12-1 momentum picks exactly the names that went on to be in the
+   index today (2024: +98%, 2025: +78% yearly returns in the top-20 variant).
+   Equal-weight universe already earns 16% vs SPY 12.5% from the same bias. The
+   momentum premium is real in the literature, but this test cannot size it.
+4. **The clean test says rotation does not beat SPY.** On a mostly
+   survivorship-free ETF universe, the best configuration (17.4% CAGR, Sharpe
+   0.71) is no better risk-adjusted than SPY (0.72); most variants are worse and
+   top-1 rotation is a disaster (−6% to +8% CAGR, −48% to −72% drawdown). Results
+   swing widely with the momentum definition — a sign of noise, not edge.
+5. **Absolute/regime filters** (SPY>200d) reduced returns more than drawdown in
+   every family here.
+
+## Verdict
+
+No strategy found that beats buy-and-hold SPY after realistic constraints and
+bias control. Nothing here is ready for the Telegram report.
+What is real: markets bounce after sharp dips (per-signal), momentum has a
+documented premium (unmeasurable on this data). Next step that could change the
+answer: a **point-in-time** stock universe (historical index membership,
+including delisted names) to size momentum without survivorship.
