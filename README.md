@@ -26,15 +26,10 @@ For each symbol, `lib/indicators.js` reproduces the full indicator suite from th
 
 ## Telegram output
 
-Stocks are grouped into sections:
-- **🔥 Bullish FVG Retest + RSI Reclaim (Confluence)** — a Fair Value Gap (3-candle price imbalance, filtered to displacement candles only) getting retested and finding support, within a few trading days of RSI Reclaimed 30 either direction
-- **🔥 MACD Green + Strong Trend (Confluence)** — MACD Turned Green firing with ADX ≥ 25
-- **🔥 MACD Green + RSI Reclaim (Confluence)** — MACD Turned Green and RSI Reclaimed 30, same symbol/window
-- **🔥 RSI Overbought + VWAP Reclaim (Momentum Continuation)** — RSI ≥ 70 with price reclaiming its rolling 20-day volume-weighted average price; a strength-confirming-strength read, not an oversold bounce like the others
-- **⚡ MACD Turned Positive** — the MACD line itself crossed zero on today's bar *and* the histogram is positive *and* ADX ≥ 25 (a more mature momentum confirmation)
-- **📊 Volume Surge** — today's volume ≥1.75x its 20-day average on an up day (fires every day it stays elevated, not just once)
+One section is shown (since 2026-11-21):
+- **🔥 Bullish Divergence + Strong Trend (Confluence)** — the indicator's pivot-confirmed bullish divergence with ADX ≥ 20
 
-"Same symbol/window" combos match within a few trading days of each other, not necessarily the same bar — see `architecture.md`. MACD Turned Green and RSI Reclaimed 30 have no standalone sections — both are weaker alone than the confluence sections above, so they only surface via combos. Bullish Divergence + Strong Trend has no display at all — tested weak specifically on this watchlist's own symbols despite looking strong on broader markets — see `architecture.md`.
+No message is sent on days without a signal, which is most days. Every other signal (MACD Green + Strong Trend, FVG Retest + RSI Reclaim, RSI Overbought + VWAP Reclaim, MACD Turned Positive, Volume Surge) is still detected and logged to `data/signals.csv` but hidden from the report, because a 10-year replay showed no edge over the average stock — see `architecture.md` ("2026-11-12 reassessment" and "2026-11-21 ten-year replay").
 
 See `architecture.md` for the full technical reference, including why a 5-trading-day lookback replaced the original single-bar magnitude thresholds.
 

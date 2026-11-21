@@ -244,6 +244,22 @@ Caveats on this analysis: the only clean out-of-sample window is 2026-09-23 onwa
 
 **Same-day follow-up — a broader test did not confirm the edge.** `research/discover.mjs` re-scored the two shown sections plus 22 new daily ideas (relative strength vs SPY, cross-sectional momentum rank, volatility squeeze, trend pullbacks, 126/252-day highs, gap-and-hold, accumulation/money flow, MFI/Stochastic/CCI/RSI(2)/Aroon/PSAR/Ichimoku) on ~540 sessions of the S&P 500 (498 stocks) and of the watchlist (153), with the same excess-over-average-stock yardstick, a Benjamini-Hochberg correction across all 26 signals, and the rule that a winner must be positive in all three time thirds of both universes. **No signal passes — new or shipped.** On the S&P 500, 15d excess: Bullish Divergence +0.6% (q=0.71; thirds -0.7/+0.8/+1.3), MACD Green +0.3% (q=0.75; -0.5/-0.0/+1.5); best new idea (126-day high on 1.5x volume) +0.9%, q=0.36, negative in the most recent third in both universes. The watchlist-only Feb-Nov 2026 result for Divergence (+3.5%, q=0.18) is the same "strong on the watchlist, weak on the broader market" pattern this file has documented before; Divergence was also negative on the watchlist in its earliest third (-4.5%, n=23). Calibration: 40 random signals produce up to +/-0.9% 15d excess on the S&P and +/-2.75% on the watchlist by chance alone, and a signal that peeks 15 days ahead lights up at +8.1% in every third, so the harness detects real edge when it exists. No regime gate (SPY above its 50/200-day average, breadth, SPY volatility) helped consistently — the effect flips sign between the two universes — and no pair of signals reached q < 0.68. **Treat both shown sections as watchlist-observed, unproven leads, not validated edges.** The removals (Volume Surge, the empty combo sections) and the de-duplication stand on noise and redundancy alone. Not yet re-scored this way: the 4H signals in `final.pine`.
 
+### 2026-11-21 ten-year replay: MACD Green + Strong Trend removed
+
+The 2026-11-12 reassessment had ~9 months of data with ~7 weeks out of sample. `research/reassess.mjs` now takes `--db` and `--watchlist-only`, so the exact production detectors were replayed over 10 years of daily bars (`research/long_daily.db`: S&P 500 ∪ Nasdaq-100 ∪ watchlist, 563 stocks, fetched with `research/fetch-universe.mjs --days=2600`), windows 2017-06→2020-12 / 2020-12→2023-12 / 2023-12→2026-11. 15-session excess vs the same-day average stock, episodes only:
+
+| Section | Universe (563) by window | Watchlist by window |
+|---|---|---|
+| Bullish Divergence + Strong Trend | +0.9% / +0.1% / +0.1% (pooled +0.3%, CI > 0) | +1.3% / −0.9% / +0.5% |
+| MACD Green + Strong Trend | **−0.2% / −0.2% / −0.2%** | +0.4% / +0.6% / **−0.8%** (CI < 0) |
+| RSI ≥ 70 + VWAP Reclaim (hidden) | +0.4% / +1.4% / +0.6% (n 65-104) | +2.0% / +4.4% / +3.1% (n 19-22) |
+| MACD Turned Positive (hidden) | mixed | **negative in all** |
+
+- **MACD Green + Strong Trend removed from the report**: negative in every window on the broad universe, and negative out of sample on the watchlist. Detection and logging stay.
+- **Bullish Divergence + Strong Trend kept**, but its edge is small (+0.1% in the two recent windows on the broad universe) — treat it as an idea feed, not a forecast.
+- **RSI ≥ 70 + VWAP Reclaim** is the most consistent hidden section in both universes but fires rarely (about once a fortnight across 563 stocks, a few times a year on the watchlist). A candidate to bring back if the 2026-12-10 re-check agrees.
+- A 10-year run of `research/discover.mjs` over two disjoint universes (non-watchlist / watchlist), with a new `--vol-matched` baseline (excess vs same-day stocks in the same volatility quintile), found **no new signal** that passes the winner screen: the best (oversold high-volatility stocks in uptrends) was half volatility exposure and has faded to ~0 since 2020. Full numbers: `research/strategy-search/RESULTS.md`, part 5.
+
 `getActiveSignals(r)` is the single source of truth for which signals are "firing" on a result entry — both `formatTelegramMessages()` and `lib/signalLog.js` use it, so the Telegram report and the historical signal log can never drift apart.
 
 ## Historical Signal Log (`lib/signalLog.js`)
@@ -273,19 +289,15 @@ The guard is on the symptom, not the cause — whatever makes a run land on an a
 
 The message carries no title or date line — it opens directly on the first populated section. It always arrives pre-market on a weekday and always summarizes the last completed session (so a Monday message covers Friday), which makes the session unambiguous from context; a date line would only add noise. Don't "fix" this by adding one.
 
-Two sections, always in this order (the one with the larger measured edge over the average stock first):
+One section since 2026-11-21:
 
 ```
 *🔥 Bullish Divergence + Strong Trend (Confluence):*
 *SYMBOL* $price
   _summary_
-
-*🔥 MACD Green + Strong Trend (Confluence):*
-*SYMBOL* $price · also RSI reclaimed 30
-  _summary_
 ```
 
-The "also RSI reclaimed 30" marker flags Green names that also reclaimed RSI 30 the same day (the old standalone Green + RSI section). A stock is listed under Green once per episode: if it already fired in the previous 10 sessions it is suppressed here and still logged. FVG + RSI, RSI Overbought + VWAP, Volume Surge and MACD Turned Positive were taken out of the report on 2026-11-12 — see the reassessment above. On a day with nothing in either section no message is sent at all.
+MACD Green + Strong Trend was taken out on 2026-11-21 (see "2026-11-21 ten-year replay" above); FVG + RSI, RSI Overbought + VWAP, Volume Surge and MACD Turned Positive on 2026-11-12. All are still detected and logged to `signals.csv`. On a day with no divergence signal no message is sent at all — expect most days to be quiet.
 
 Empty sections are skipped entirely, so the message opens on whichever of these is first populated. Within a section, symbols are sorted alphabetically (see `formatTelegramMessages()`), so a symbol keeps its position from one day's message to the next.
 
