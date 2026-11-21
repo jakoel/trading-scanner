@@ -259,3 +259,31 @@ in the same 60d-volatility quintile, so high-beta names can't fake an edge.
 Conclusion: on daily price/volume data at a 2–4 week horizon there is no
 signal that clears a "strong" bar. MACD Green + Strong Trend should be removed;
 Bullish Divergence is weak and fading.
+
+---
+
+# Part 6 — insider buying (SEC Form 4), 2016–2026 (2026-11-21)
+
+Data: SEC quarterly Insider Transactions Data Sets 2016Q1–2026Q1
+(`research/insider/fetch-sec.mjs`, needs `SEC_USER_AGENT` set in the environment;
+`build-insider.mjs` extracts 296,486 open-market purchases). Event = purchase
+public on its filing date, entry at the next session's close; one event per
+symbol per 20 sessions; directors/officers only, ≥ $10k. Outcome vs same-day
+average stock and vs same-day stocks in the same volatility quintile (VM);
+tradable rows only (price ≥ $5, 20d dollar volume ≥ $1M), returns clipped to
+[−90%, +200%] (`insider-study.mjs`). Without those filters the small-cap
+baseline is wrecked by penny stocks/unadjusted reverse splits — don't drop them.
+
+| Universe | Best variant, 20d VM excess | Range across 7 variants × 4 horizons |
+|---|---|---|
+| ~4,100 small/mid caps with insider buys (`insider_prices.db`) | +0.3% (t 1.0) | −0.7% … +0.5%, no |t| > 1.5, medians ≈ 0 |
+| 563 large caps (`long_daily.db`) | −0.1% | −2.0% … +0.2%; 3+ insider clusters −1.1% to −1.7% |
+
+Insiders buy after declines (−3% to −10% over the prior 20 sessions) and the
+stock does not outperform comparable stocks afterwards, at 2–12 weeks, in any
+definition (any buy, ≥$100k, ≥$500k, CEO/CFO, clusters of 2 or 3+ insiders).
+Survivorship (delisted names have no Yahoo prices) flatters these numbers, so
+the true effect is if anything lower. Consistent with reports that the
+published insider effect has largely faded since the 2000s.
+
+Verdict: not a signal for the report.

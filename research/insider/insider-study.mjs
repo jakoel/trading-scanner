@@ -22,6 +22,12 @@ import { DatabaseSync } from 'node:sqlite';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const arg = (k, d) => { const a = process.argv.find(x => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d; };
 const HZ = [10, 20, 40, 60], COOL = 20;
+// Robustness for small caps: only "tradable" rows count, for events AND baseline
+// (price >= $5, 20d average dollar volume >= $1M), and each forward return is
+// clipped to [-90%, +200%] so a bad print or unadjusted reverse split can't
+// dominate an average.
+const MIN_PRICE = Number(arg('min-price', '5')), MIN_DV = Number(arg('min-dollar-vol', '1e6'));
+const clip = r => Math.max(-0.9, Math.min(2, r));
 const wl = new Set(readFileSync(join(__dirname, '..', '..', 'watchlist.txt'), 'utf-8').split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#')));
 
 // ── prices ──
@@ -30,21 +36,22 @@ const dates = db.prepare('SELECT DISTINCT date FROM bars ORDER BY date').all().m
 const dIdx = new Map(dates.map((d, i) => [d, i]));
 const P = new Map();
 for (const { symbol } of db.prepare("SELECT DISTINCT symbol FROM bars WHERE symbol NOT IN ('SPY','QQQ','IWM')").all()) {
-  const rows = db.prepare('SELECT date, close FROM bars WHERE symbol = ? ORDER BY date').all(symbol);
+  const rows = db.prepare('SELECT date, close, volume FROM bars WHERE symbol = ? ORDER BY date').all(symbol);
   const c = rows.map(r => r.close), g = rows.map(r => dIdx.get(r.date));
+  const ok = c.map((x, i) => { if (i < 20 || !(x >= MIN_PRICE)) return false; let dv = 0; for (let k = i - 19; k <= i; k++) dv += rows[k].close * rows[k].volume; return dv / 20 >= MIN_DV; });
   const ret = c.map((x, i) => (i ? x / c[i - 1] - 1 : 0));
   const vol = c.map((_, i) => { if (i < 61) return null; let m = 0; for (let k = i - 59; k <= i; k++) m += ret[k]; m /= 60; let v = 0; for (let k = i - 59; k <= i; k++) v += (ret[k] - m) ** 2; return Math.sqrt(v / 59); });
-  P.set(symbol, { d: rows.map(r => r.date), c, g, vol, vq: new Array(c.length).fill(null) });
+  P.set(symbol, { d: rows.map(r => r.date), c, g, vol, ok, vq: new Array(c.length).fill(null) });
 }
 // volatility quintiles per date
 const byDate = new Map();
-for (const s of P.values()) s.vol.forEach((v, i) => { if (v != null) (byDate.get(s.g[i]) ?? byDate.set(s.g[i], []).get(s.g[i])).push([s, i, v]); });
+for (const s of P.values()) s.vol.forEach((v, i) => { if (v != null && s.ok[i]) (byDate.get(s.g[i]) ?? byDate.set(s.g[i], []).get(s.g[i])).push([s, i, v]); });
 for (const arr of byDate.values()) { arr.sort((a, b) => a[2] - b[2]); arr.forEach(([s, i], r) => { s.vq[i] = Math.min(4, Math.floor(5 * r / arr.length)); }); }
 // same-day baselines: all stocks, and per vol quintile
 const base = {}, baseV = {};
 for (const h of HZ) {
   const S = new Float64Array(dates.length), N = new Float64Array(dates.length), SV = new Float64Array(dates.length * 5), NV = new Float64Array(dates.length * 5);
-  for (const s of P.values()) for (let i = 0; i + h < s.c.length; i++) { const r = s.c[i + h] / s.c[i] - 1; S[s.g[i]] += r; N[s.g[i]]++; if (s.vq[i] != null) { SV[s.g[i] * 5 + s.vq[i]] += r; NV[s.g[i] * 5 + s.vq[i]]++; } }
+  for (const s of P.values()) for (let i = 0; i + h < s.c.length; i++) { if (!s.ok[i]) continue; const r = clip(s.c[i + h] / s.c[i] - 1); S[s.g[i]] += r; N[s.g[i]]++; if (s.vq[i] != null) { SV[s.g[i] * 5 + s.vq[i]] += r; NV[s.g[i] * 5 + s.vq[i]]++; } }
   base[h] = g => (N[g] ? S[g] / N[g] : null); baseV[h] = (g, q) => (NV[g * 5 + q] ? SV[g * 5 + q] / NV[g * 5 + q] : null);
 }
 
@@ -94,16 +101,16 @@ for (const [name, fn] of Object.entries(VARIANTS)) {
   const ev = [];
   for (const [sym, list] of buys) {
     const s = P.get(sym); let last = -1e9;
-    for (const fd of [...new Set(fn(list))].sort()) { const e = entryIdx(s, fd); if (e < 61 || e - last < COOL) continue; last = e; ev.push({ sym, s, e }); }
+    for (const fd of [...new Set(fn(list))].sort()) { const e = entryIdx(s, fd); if (e < 61 || e - last < COOL || !s.ok[e]) continue; last = e; ev.push({ sym, s, e }); }
   }
   const cells = HZ.map(h => {
-    const xs = ev.filter(x => x.e + h < x.s.c.length).map(x => { const r = x.s.c[x.e + h] / x.s.c[x.e] - 1, g = x.s.g[x.e], b = base[h](g), bv = x.s.vq[x.e] != null ? baseV[h](g, x.s.vq[x.e]) : null; return { r, ex: b == null ? null : r - b, vm: bv == null ? null : r - bv, g, wl: wl.has(x.sym) }; }).filter(x => x.ex != null && x.vm != null);
+    const xs = ev.filter(x => x.e + h < x.s.c.length).map(x => { const r = clip(x.s.c[x.e + h] / x.s.c[x.e] - 1), g = x.s.g[x.e], b = base[h](g), bv = x.s.vq[x.e] != null ? baseV[h](g, x.s.vq[x.e]) : null; return { r, ex: b == null ? null : r - b, vm: bv == null ? null : r - bv, g, wl: wl.has(x.sym) }; }).filter(x => x.ex != null && x.vm != null);
     const n = xs.length, m = k => xs.reduce((a, x) => a + x[k], 0) / (n || 1);
     const vm = m('vm'), sd = Math.sqrt(xs.reduce((a, x) => a + (x.vm - vm) ** 2, 0) / (n || 1)), nd = new Set(xs.map(x => x.g)).size;
     return { n, raw: m('r'), ex: m('ex'), vm, t: sd ? vm / (sd / Math.sqrt(nd)) : 0, xs };
   });
   const pre = ev.map(x => x.s.c[x.e - 1] / x.s.c[x.e - 21] - 1).reduce((a, b) => a + b, 0) / (ev.length || 1);
-  const c20 = cells[1], th = [0, 1, 2].map(t => { const z = c20.xs.filter(x => third(x.g) === t); return z.length ? `${pct(z.reduce((a, x) => a + x.vm, 0) / z.length)}(${z.length})` : '-'; }).join(' ');
+  const c20 = cells[1], med = (a => a.length ? a.sort((x, y) => x - y)[a.length >> 1] : NaN)(c20.xs.map(x => x.vm)), th = [0, 1, 2].map(t => { const z = c20.xs.filter(x => third(x.g) === t); return z.length ? `${pct(z.reduce((a, x) => a + x.vm, 0) / z.length)}(${z.length})` : '-'; }).join(' ');
   const w = c20.xs.filter(x => x.wl), wtxt = w.length ? `${pct(w.reduce((a, x) => a + x.vm, 0) / w.length)} (${w.length})` : '-';
-  console.log(name.padEnd(40) + String(ev.length).padStart(6) + pct(pre).padStart(8) + '   ' + cells.map(c => `${pct(c.raw)} / ${pct(c.ex)} / ${pct(c.vm)} (${c.t.toFixed(1)})`.padEnd(28)).join('') + th.padEnd(23) + wtxt);
+  console.log(name.padEnd(40) + String(ev.length).padStart(6) + ` med20VM ${pct(med)}` + pct(pre).padStart(8) + '   ' + cells.map(c => `${pct(c.raw)} / ${pct(c.ex)} / ${pct(c.vm)} (${c.t.toFixed(1)})`.padEnd(28)).join('') + th.padEnd(23) + wtxt);
 }
