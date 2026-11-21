@@ -18,6 +18,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const arg = (k, d) => { const a = process.argv.find(x => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : d; };
 const db = new DatabaseSync(arg('db', join(__dirname, '..', 'long_features.db')), { readonly: true });
 const WL_ONLY = process.argv.includes('--watchlist-only');
+const BUY = process.argv.includes('--buy'); // score buy signals instead (positive excess = worked)
+const SINCE = arg('since', '0000-00-00');
 const wl = new Set(readFileSync(join(__dirname, '..', '..', 'watchlist.txt'), 'utf-8').split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#')));
 const H = [10, 15, 20], COOLDOWN = 10;
 
@@ -28,7 +30,7 @@ const third = i => (i < dates.length / 3 ? 0 : i < 2 * dates.length / 3 ? 1 : 2)
 const avg = {};
 for (const h of H) {
   const m = new Float64Array(dates.length).fill(NaN);
-  for (const r of db.prepare(`SELECT date, AVG(fwd${h}) a FROM bar_features WHERE fwd${h} IS NOT NULL GROUP BY date`).all()) m[dIdx.get(r.date)] = r.a;
+  for (const r of db.prepare(`SELECT date, AVG(fwd${h}) a FROM bar_features WHERE fwd${h} IS NOT NULL AND date >= '${SINCE}' GROUP BY date`).all()) m[dIdx.get(r.date)] = r.a;
   avg[h] = m;
 }
 
@@ -53,9 +55,19 @@ const CANDS = [
   ['Bearish FVG retest + RSI cross 50 down', 'f_bearishFvgRetest=1 AND f_rsiCross50Down=1'],
 ];
 
+const BUY_CANDS = [
+  ['SHIPPED: Bullish Divergence + ADX>=20', 'f_bullishDiv=1 AND f_adx20=1'],
+  ['SHIPPED: MACD Green + ADX>=25', 'f_macdGreen=1 AND f_adx25=1'],
+  ['  of which also RSI reclaimed 30', 'f_macdGreen=1 AND f_adx25=1 AND f_rsiReclaim30=1'],
+  ['hidden: Volume Surge 1.75x', 'f_volSurge175=1'],
+  ['hidden: MACD Positive + ADX>=25', 'f_macdPositiveRaw=1 AND f_adx25=1'],
+  ['hidden: FVG Retest + RSI Reclaim 30', 'f_bullishFvgRetest=1 AND f_rsiReclaim30=1'],
+  ['hidden: RSI>=70 + VWAP Reclaim', 'f_vwapReclaim20=1 AND f_rsiOverboughtState=1'],
+];
+const CANDS_USED = BUY ? BUY_CANDS : CANDS;
 const pct = x => (x * 100).toFixed(2).padStart(6) + '%';
 function score(where) {
-  const rows = db.prepare(`SELECT symbol, date, fwd10, fwd15, fwd20 FROM bar_features WHERE ${where} ORDER BY symbol, date`).all()
+  const rows = db.prepare(`SELECT symbol, date, fwd10, fwd15, fwd20 FROM bar_features WHERE (${where}) AND date >= '${SINCE}' ORDER BY symbol, date`).all()
     .filter(r => !WL_ONLY || wl.has(r.symbol));
   const eps = []; let ls = '', li = -1e9;
   for (const r of rows) {
@@ -74,11 +86,12 @@ function score(where) {
   return { ep: eps.length, out };
 }
 
-console.log(`${WL_ONLY ? 'WATCHLIST ONLY' : 'FULL UNIVERSE'}  ${arg('db', 'long_features.db')}   ${dates[0]} → ${dates.at(-1)}   (negative excess = the sell signal worked)\n`);
+console.log(`${WL_ONLY ? 'WATCHLIST ONLY' : 'FULL UNIVERSE'}  ${arg('db', 'long_features.db')}   ${dates[0]} → ${dates.at(-1)}   (${BUY ? 'POSITIVE' : 'negative'} excess = the signal worked)\n`);
 console.log('signal'.padEnd(42) + 'episodes   ' + H.map(h => `${h}d excess (t)`.padEnd(20)).join('') + '15d excess by third (n)                    raw 15d  %down@15d');
-for (const [name, where] of CANDS) {
+for (const [name, where] of CANDS_USED) {
   const r = score(where), o = r.out;
   const th = o[15].thirds.map(t => `${pct(t.m)}(${t.n})`).join(' ');
-  const verdict = o[15].m < 0 && o[15].thirds.every(t => t.n >= 8 && t.m < 0) ? '  <-- negative in all 3 thirds' : '';
+  const sg = BUY ? 1 : -1;
+  const verdict = sg * o[15].m > 0 && o[15].thirds.every(t => t.n >= 8 && sg * t.m > 0) ? '  <-- works in all 3 thirds' : '';
   console.log(name.padEnd(42) + String(r.ep).padStart(7) + '   ' + H.map(h => `${pct(o[h].m)} (${o[h].t.toFixed(1)})`.padEnd(20)).join('') + th.padEnd(42) + pct(o[15].raw) + '  ' + (o[15].down * 100).toFixed(0) + '%' + verdict);
 }

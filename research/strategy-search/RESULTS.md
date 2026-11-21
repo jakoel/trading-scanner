@@ -199,3 +199,24 @@ hindsight selection and momentum continuation in a bull market, which makes a
 sell signal look worse here than it would elsewhere — but nothing suggests an
 edge.) If re-tested later, use `sell-signals.mjs`, and require negative excess
 in all three thirds on the watchlist itself.
+
+---
+
+# Part 4 — the two SHIPPED signals on 10 years / last 2 years (2026-11-21)
+
+`sell-signals.mjs --buy [--watchlist-only] [--since=YYYY-MM-DD]`. Flags approximate
+the production detectors (single-bar flags + one event per 10 sessions; not a
+replay of `lib/report.js`), excess = vs same-day average stock, 15 sessions.
+
+| Signal | 563 stocks, 10y | Watchlist, 10y | Watchlist, last 2y |
+|---|---|---|---|
+| Bullish Divergence + ADX≥20 | +0.31% (t 2.2), positive in all 3 thirds | +1.18% (t 2.6), all 3 thirds | +2.18% (t 2.1) |
+| MACD Green + ADX≥25 | **−0.23% (t −2.3)** | +0.46% (t 1.0) | +0.79% (t 1.5) |
+| hidden: MACD Positive + ADX≥25 | −0.29% | +0.01% | **−4.69% (t −2.5)** |
+| hidden: Volume Surge 1.75x | 0.00% | +1.14% (t 6.0) | +2.01% (t 4.4) |
+
+Reading: Divergence holds up (modest broadly, larger on the watchlist). MACD
+Green + Strong Trend shows no edge beyond market drift on the broad universe.
+Hiding MACD Positive is supported. Volume Surge looks strong only on the
+hindsight-picked watchlist and is zero on the broad universe — not a reason to
+reverse the 2026-11-12 decision.
