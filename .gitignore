@@ -11,3 +11,5 @@ research/watchlist_qqq.db
 research/watchlist_qqq_features.db
 research/*.db
 research/.out_*
+research/sec_raw/
+research/insider/*.csv
