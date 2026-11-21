@@ -30,6 +30,7 @@ const dbArgs = process.argv.filter(a => a.startsWith('--db=')).map(a => a.slice(
 if (!dbArgs.length) { console.error('need --db=LABEL=path'); process.exit(1); }
 const WANT_COMBOS = process.argv.includes('--combos');
 const SELFTEST = process.argv.includes('--selftest'); // replaces the catalog with random signals + one that peeks at the future
+const VOLM = process.argv.includes('--vol-matched'); // baseline = same-day average of stocks in the same volatility quintile
 const SINCE = (process.argv.find(a => a.startsWith('--since=')) ?? '--since=').slice(8); // only count events on/after this date
 const HZ = [10, 15, 20], PRIMARY = 15, COOL = 10, WARM = 210, WIN = 3;
 const BENCH = new Set(['SPY', 'QQQ']);
@@ -80,6 +81,10 @@ function build(label, path) {
     s.atr = sma(tr, 14);
     s.rsi2 = rsiW(c, 2);
     const sd = stdev(c, 20); s.bbUp = s.sma20.map((m, i) => (m == null ? null : m + 2 * sd[i]));
+    s.bbLo = s.sma20.map((m, i) => (m == null ? null : m - 2 * sd[i]));
+    s.atrPct = s.atr.map((a, i) => (a == null ? null : a / c[i]));
+    const dr = c.map((x, i) => (i ? x / c[i - 1] - 1 : 0));
+    s.rvol = c.map((_, i) => { if (i < 61) return null; let m = 0; for (let k = i - 59; k <= i; k++) m += dr[k]; m /= 60; let v = 0; for (let k = i - 59; k <= i; k++) v += (dr[k] - m) ** 2; return Math.sqrt(v / 59); });
     const bw = s.sma20.map((m, i) => (m == null ? null : 4 * sd[i] / m));
     s.bwRank = bw.map((x, i) => { if (x == null || i < 139) return null; let k = 0, t = 0; for (let j = i - 119; j <= i; j++) if (bw[j] != null) { t++; if (bw[j] <= x) k++; } return t ? k / t : null; });
     const range = h.map((x, i) => x - l[i]);
@@ -100,6 +105,7 @@ function build(label, path) {
     s.psar = psarBull(h, l);
     s.cloudTop = c.map((_, i) => { if (i < 78) return null; const j = i - 26; const ten = (rollMax(h, j - 8, j) + rollMin(l, j - 8, j)) / 2, kij = (rollMax(h, j - 25, j) + rollMin(l, j - 25, j)) / 2; const a = (ten + kij) / 2, b = (rollMax(h, j - 51, j) + rollMin(l, j - 51, j)) / 2; return Math.max(a, b); });
     s.rs = c.map((x, i) => { const k = spyAt.get(s.bars[i].date); return k == null ? null : x / spy.c[k]; });
+    s.rsClean = s.rs.map(x => x ?? -Infinity);
     s.mom = c.map((_, i) => (i >= 68 ? c[i - 5] / c[i - 68] - 1 : null));
     s.ret5 = c.map((x, i) => (i >= 5 ? x / c[i - 5] - 1 : null));
     s.ret20 = c.map((x, i) => (i >= 20 ? x / c[i - 20] - 1 : null));
@@ -109,13 +115,17 @@ function build(label, path) {
   for (const s of S) { if (BENCH.has(s.sym)) continue; for (let i = 0; i < s.n; i++) { const d = s.bars[i].date; let e = byDate.get(d); if (!e) byDate.set(d, e = { mom: [], above: 0, tot: 0 }); if (s.mom[i] != null) e.mom.push([s, i, s.mom[i]]); if (s.sma50[i] != null) { e.tot++; if (s.c[i] > s.sma50[i]) e.above++; } } }
   for (const s of S) s.momRank = new Array(s.n).fill(null);
   for (const e of byDate.values()) { e.mom.sort((a, b) => a[2] - b[2]); const N = e.mom.length; e.mom.forEach(([s, i], r) => { s.momRank[i] = N > 1 ? r / (N - 1) : null; }); }
+  // volatility quintile per date (60d realised vol), for the --vol-matched baseline
+  const volByDate = new Map();
+  for (const s of S) { if (BENCH.has(s.sym)) continue; s.vq = new Array(s.n).fill(null); for (let i = 0; i < s.n; i++) if (s.rvol[i] != null) { const d = s.bars[i].date; (volByDate.get(d) ?? volByDate.set(d, []).get(d)).push([s, i, s.rvol[i]]); } }
+  for (const arr of volByDate.values()) { arr.sort((a, b) => a[2] - b[2]); const N = arr.length; arr.forEach(([s, i], r) => { s.vq[i] = Math.min(4, Math.floor(5 * r / N)); }); }
   const breadth = new Map([...byDate].map(([d, e]) => [d, e.tot ? e.above / e.tot : null]));
 
   // forward returns + same-day baseline
   const real = S.filter(s => !BENCH.has(s.sym));
   const baseSum = new Map();
-  for (const s of real) for (let i = 0; i < s.n; i++) for (const h of HZ) if (i + h < s.n) { const k = s.bars[i].date + '|' + h; const e = baseSum.get(k) ?? (baseSum.set(k, [0, 0]).get(k)); e[0] += s.c[i + h] / s.c[i] - 1; e[1]++; }
-  const base = (d, h) => { const e = baseSum.get(d + '|' + h); return e ? e[0] / e[1] : null; };
+  for (const s of real) for (let i = 0; i < s.n; i++) for (const h of HZ) if (i + h < s.n) { const k = s.bars[i].date + '|' + h + (VOLM ? '|' + s.vq[i] : ''); const e = baseSum.get(k) ?? (baseSum.set(k, [0, 0]).get(k)); e[0] += s.c[i + h] / s.c[i] - 1; e[1]++; }
+  const base = (d, h, q) => { const e = baseSum.get(d + '|' + h + (VOLM ? '|' + q : '')); return e ? e[0] / e[1] : null; };
   return { label, S, real, spy, spyAt, spyEma50, spyEma200, spyVol, breadth, base };
 }
 
@@ -128,8 +138,11 @@ const SIGNALS = [
   { key: 'P_rsi30', label: '[prod] RSI Reclaim 30 + ADX>=20', fam: 'prod', f: (s, i) => detectRsiSignals(s.rows.slice(Math.max(0, i - 6), i + 1).map(r => ({ rsi: r.rsi })), { adx: s.rows[i].adx }).rsiSignals.length > 0 },
   { key: 'P_vol', label: '[prod] Volume Surge (up day)', fam: 'prod', f: (s, i) => detectVolumeSignals({ volumeRatio: s.rows[i].volumeRatio, price: s.c[i], prevPrice: s.c[i - 1] }).volumeSignals.length > 0 },
   // ── relative strength ──
-  { key: 'rsHigh60', label: 'RS line (vs SPY) new 60d high', fam: 'relstr', f: (s, i) => s.rs[i] != null && i > 61 && s.rs[i] > rollMax(s.rs.map(x => x ?? -Infinity), i - 60, i - 1) },
-  { key: 'rsLead', label: 'RS new 60d high while price below its 60d high', fam: 'relstr', f: (s, i) => s.rs[i] != null && i > 61 && s.rs[i] > rollMax(s.rs.map(x => x ?? -Infinity), i - 60, i - 1) && s.c[i] < rollMax(s.c, i - 60, i - 1) },
+  { key: 'osHvBb', label: 'Close <= lower BB(20,2), above EMA200, ATR% > 3% (search pt1)', fam: 'oshv', f: (s, i) => s.bbLo[i] != null && s.ema200[i] != null && s.c[i] <= s.bbLo[i] && s.c[i] > s.ema200[i] && s.atrPct[i] > 0.03 },
+  { key: 'osHvRsi2', label: 'RSI(2) < 5, above EMA200, ATR% > 3% (search pt1)', fam: 'oshv', f: (s, i) => s.rsi2[i] != null && s.ema200[i] != null && s.rsi2[i] < 5 && s.c[i] > s.ema200[i] && s.atrPct[i] > 0.03 },
+  { key: 'osLvBb', label: 'Control: same BB oversold, above EMA200, ATR% < 2%', fam: 'oshv', f: (s, i) => s.bbLo[i] != null && s.ema200[i] != null && s.c[i] <= s.bbLo[i] && s.c[i] > s.ema200[i] && s.atrPct[i] < 0.02 },
+  { key: 'rsHigh60', label: 'RS line (vs SPY) new 60d high', fam: 'relstr', f: (s, i) => s.rs[i] != null && i > 61 && s.rs[i] > rollMax(s.rsClean, i - 60, i - 1) },
+  { key: 'rsLead', label: 'RS new 60d high while price below its 60d high', fam: 'relstr', f: (s, i) => s.rs[i] != null && i > 61 && s.rs[i] > rollMax(s.rsClean, i - 60, i - 1) && s.c[i] < rollMax(s.c, i - 60, i - 1) },
   { key: 'momTop', label: 'Enters top-20% 3-month momentum (skip last wk)', fam: 'relstr', f: (s, i) => s.momRank[i] != null && s.momRank[i - 5] != null && s.momRank[i] >= 0.8 && s.momRank[i - 5] < 0.8 },
   { key: 'holdsSelloff', label: 'Up on the week while SPY down >=2%', fam: 'relstr', f: (s, i) => { const k = s.bars[i].date, j = spyIdx(s, i); return j != null && j >= 5 && s.ret5[i] != null && s.ret5[i] >= 0 && CTX.spy.c[j] / CTX.spy.c[j - 5] - 1 <= -0.02; } },
   // ── volatility squeeze ──
@@ -226,7 +239,7 @@ function run(ds) {
         if (!first) continue;
         const d = s.bars[i].date;
         if (d < SINCE) continue;
-        for (const h of HZ) if (i + h < s.n) { const b = base(d, h); if (b != null) ev[h].push({ d, r: s.c[i + h] / s.c[i] - 1, b, t: third(d) }); }
+        for (const h of HZ) if (i + h < s.n) { const b = base(d, h, s.vq[i]); if (b != null) ev[h].push({ d, r: s.c[i + h] / s.c[i] - 1, b, t: third(d) }); }
       }
     });
     return ev;

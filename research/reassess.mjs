@@ -32,6 +32,7 @@
  * 3 horizons x 4 windows will throw up a few "significant" cells by chance.
  */
 import { DatabaseSync } from 'node:sqlite';
+import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { computeIndicators } from '../lib/indicators.js';
@@ -66,8 +67,13 @@ const SIGNALS = [
 ];
 
 // ── replay ──────────────────────────────────────────────────────────────────
-const db = new DatabaseSync(join(__dirname, '..', 'data', 'bars.db'), { readonly: true });
-const symbols = db.prepare('SELECT DISTINCT symbol FROM bars ORDER BY symbol').all().map(r => r.symbol);
+// --db=path replays a longer history (e.g. research/long_daily.db, 10 years);
+// --watchlist-only keeps only watchlist.txt symbols, so the same-day baseline is
+// the average *watchlist* stock as in production.
+const db = new DatabaseSync(argValue('db', join(__dirname, '..', 'data', 'bars.db')), { readonly: true });
+const watch = new Set(readFileSync(join(__dirname, '..', 'watchlist.txt'), 'utf-8').split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#')));
+const symbols = db.prepare('SELECT DISTINCT symbol FROM bars ORDER BY symbol').all().map(r => r.symbol)
+  .filter(s => !process.argv.includes('--watchlist-only') || watch.has(s));
 const bySym = new Map();
 console.error(`Replaying ${symbols.length} symbols from ${FROM}...`);
 for (const symbol of symbols) {

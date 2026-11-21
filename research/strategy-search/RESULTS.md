@@ -220,3 +220,42 @@ Green + Strong Trend shows no edge beyond market drift on the broad universe.
 Hiding MACD Positive is supported. Volume Surge looks strong only on the
 hindsight-picked watchlist and is zero on the broad universe — not a reason to
 reverse the 2026-11-12 decision.
+
+---
+
+# Part 5 — exact production replay + discovery on 10 years (2026-11-21)
+
+**Exact replay** (`research/reassess.mjs --db=research/long_daily.db [--watchlist-only]
+--from=2017-06-01 --live-start=2020-12-01 --oos-start=2023-12-01`; the script now
+takes `--db` and `--watchlist-only`). 15d excess vs same-day average stock, by
+window 2017-20 / 2020-23 / 2023-26:
+
+| Signal | Universe (563) | Watchlist |
+|---|---|---|
+| Bullish Divergence + Strong Trend [shown] | +0.9 / +0.1 / +0.1% (pooled +0.3%, CI > 0) | +1.3 / −0.9 / +0.5% mixed |
+| MACD Green + Strong Trend [shown] | **−0.2 / −0.2 / −0.2%**, negative in all | +0.4 / +0.6 / **−0.8%** (CI < 0 in latest) |
+| RSI≥70 + VWAP Reclaim [hidden] | +0.4 / +1.4 / +0.6%, positive in all (n 65–104) | +2.0 / +4.4 / +3.1%, positive in all (n 19–22) |
+| MACD Turned Positive [hidden] | mixed | **negative in all** (−1.3% pooled, CI < 0) |
+| Volume Surge [hidden] | ~0 | +0.1 / +0.4 / +0.3% |
+
+**Discovery** (`research/discover.mjs --db=REST=research/d10_rest.db
+--db=WL=research/d10_wl.db [--vol-matched]`): two disjoint universes (446
+non-watchlist stocks / 123 watchlist), 29 signals, BH correction, pre-specified
+winner screen. New `--vol-matched` flag measures excess against same-day stocks
+in the same 60d-volatility quintile, so high-beta names can't fake an edge.
+
+- Standard baseline: **2 winners**, both from strategy-search part 1 — oversold
+  (RSI(2)<5 or close ≤ lower BB) in an above-EMA200 stock with ATR% > 3%:
+  +0.7–0.9% 15d excess, positive in every third of both universes, q ≤ 0.015.
+  The same setup in low-volatility stocks (control) is ~0.
+- Volatility-matched baseline: **0 winners.** The same two drop to +0.4–0.5%,
+  q ≈ 0.13 / 0.97, and the broad-universe thirds go +1.6 / +0.3 / +0.1% — about
+  half the edge was volatility exposure and the rest has faded to ~0 since 2020.
+- Momentum/breakout *events* (RS new high, 126/252d highs, squeeze breaks,
+  top-momentum entry) are flat to negative at 2–4 weeks in both universes —
+  consistent with short-term reversal; momentum's documented premium is a
+  3–12 month holding effect, not a breakout-day signal.
+
+Conclusion: on daily price/volume data at a 2–4 week horizon there is no
+signal that clears a "strong" bar. MACD Green + Strong Trend should be removed;
+Bullish Divergence is weak and fading.
