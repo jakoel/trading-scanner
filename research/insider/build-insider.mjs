@@ -39,7 +39,7 @@ for (const zip of zips) {
   for (let k = 1; k < sub.lines.length; k++) {
     const f = sub.lines[k].split('\t'); if (f.length < 3) continue;
     if (f[sD].trim() !== '4') continue; // originals only; amendments would double-count
-    const sym = (f[sS] ?? '').trim().toUpperCase().replace(/\./g, '-');
+    const sym = ((f[sS] ?? '').trim().toUpperCase().split(/[\s,;/]+/)[0] ?? '').replace(/\./g, '-'); // 'GEF, GEF-B' -> 'GEF'
     if (!sym || sym === 'NONE' || sym === 'N/A') continue;
     subm.set(f[sA], { fd: isoDate(f[sF]), sym });
   }
