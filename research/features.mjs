@@ -38,6 +38,10 @@ export const FLAG_NAMES = [
   // the validated bullish entries.
   'macdBearCross', 'rsiCross50Down', 'rsiRejectFrom70',
   'bearishFvgFormed', 'bearishFvgRetest',
+  // Mirrors of the shipped buy signals, for sell-side research: MACD turning red
+  // (histogram crosses below zero while the line is still positive), price
+  // breaking below the ATR trailing stop, and losing the rolling 20d VWAP.
+  'macdRed', 'atrBreakdown', 'vwapLoss20',
 ];
 
 const b = x => (x ? 1 : 0);
@@ -151,6 +155,13 @@ function extractVwapReclaim(bars, i) {
   return b(bars[i - 1].close <= vwapPrev && bars[i].close > vwapNow);
 }
 
+function extractVwapLoss(bars, i) {
+  if (i < VWAP_LENGTH) return 0;
+  const vwapNow = rollingVwap(bars, i), vwapPrev = rollingVwap(bars, i - 1);
+  if (vwapNow == null || vwapPrev == null) return 0;
+  return b(bars[i - 1].close >= vwapPrev && bars[i].close < vwapNow);
+}
+
 /**
  * Given a symbol's raw OHLCV `bars` (the array passed into computeIndicators()),
  * its `rows` (computeIndicators()'s output, same length/index as `bars`), and
@@ -170,6 +181,11 @@ export function extractFlags(bars, rows, i) {
       prev.macdLine <= 0 && cur.macdLine > 0 && cur.histogram > 0),
     macdBullCross: b(cur.macdLine != null && cur.signalLine != null && prev.macdLine != null && prev.signalLine != null &&
       prev.macdLine <= prev.signalLine && cur.macdLine > cur.signalLine),
+    macdRed: b(cur.histogram != null && prev.histogram != null && cur.macdLine != null &&
+      prev.histogram >= 0 && cur.histogram < 0 && cur.macdLine > 0),
+    atrBreakdown: b(cur.atrTrailingStop != null && prev.atrTrailingStop != null &&
+      (prev.price - prev.atrTrailingStop) >= 0 && (cur.price - cur.atrTrailingStop) < 0),
+    vwapLoss20: extractVwapLoss(bars, i),
     macdBearCross: b(cur.macdLine != null && cur.signalLine != null && prev.macdLine != null && prev.signalLine != null &&
       prev.macdLine >= prev.signalLine && cur.macdLine < cur.signalLine),
 

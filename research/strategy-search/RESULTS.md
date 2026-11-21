@@ -171,3 +171,31 @@ What is real: markets bounce after sharp dips (per-signal), momentum has a
 documented premium (unmeasurable on this data). Next step that could change the
 answer: a **point-in-time** stock universe (historical index membership,
 including delisted names) to size momentum without survivorship.
+
+---
+
+# Part 3 — sell-side signals (2026-11-21)
+
+Question: can mirrors of the shipped buy signals be shipped as SELL signals?
+`sell-signals.mjs` scores 18 candidates (bearish divergence, MACD turning red,
+RSI reject from 70 / cross 50 down, ATR trailing-stop breakdown, 20d VWAP loss,
+bearish FVG formed/retest, and gated variants) as forward return 10/15/20
+sessions later **in excess of the same-day average stock**, one event per
+episode, in time thirds. A working sell signal needs *negative* excess,
+consistently. `features.mjs` gained `macdRed`, `atrBreakdown`, `vwapLoss20`.
+
+| Test set | Result |
+|---|---|
+| Watchlist, `data/bars.db`, ~19 months | No signal negative in all three thirds with usable n; several positive (e.g. MACD Red + ADX≥25: +1.1% at 15d) |
+| 563-symbol universe, 10 years | Best: Bearish Divergence −0.21% at 15d (t −3.6), MACD Red −0.10%, ATR breakdown below EMA200 −0.18%. All ≤ 0.2% — and the raw return after the signal is still **+0.5% to +0.7%** (stocks rise ~55% of the time after a "sell") |
+| Watchlist symbols, 10 years | **Every** sell signal has positive excess: RSI reject from 70 +1.45% (t 7.1), bearish FVG formed +0.90%, VWAP loss +0.70%, MACD bear cross +0.67% at 15d |
+
+## Verdict
+Do not ship. On the watchlist, stocks that trigger a "sell" signal go on to
+*outperform* the average stock; on the broad universe the effect is a fifth of a
+percent over 3 weeks, far below any cost or a short's borrow/risk. As exit
+warnings they also lose to simply holding. (Part of the watchlist result is
+hindsight selection and momentum continuation in a bull market, which makes a
+sell signal look worse here than it would elsewhere — but nothing suggests an
+edge.) If re-tested later, use `sell-signals.mjs`, and require negative excess
+in all three thirds on the watchlist itself.
