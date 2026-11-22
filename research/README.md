@@ -1,57 +1,96 @@
 # Research tooling
 
-Standalone signal-combo research, separate from the production scan pipeline
+Standalone signal research, separate from the production scan pipeline
 (`scan_headless.js`, `lib/`). Nothing here writes to `data/bars.db` or affects
-what gets posted to Telegram — it's read-only against production data and
-writes its own throwaway SQLite databases.
+what gets posted to Telegram — it reads production data and writes its own
+throwaway databases.
 
-**Findings and decisions (what shipped, what didn't, and why) live in
-[`../architecture.md`](../architecture.md), not here.** This file only covers
-how to run the tooling.
+**Where findings live:** decisions (what shipped, what didn't, and why) go in
+[`../architecture.md`](../architecture.md). The full research log with every
+number — strategy search, portfolio tests, sell signals, 10-year replays,
+insider buying, ranked MACD/RSI/ATR features — is
+[`strategy-search/RESULTS.md`](./strategy-search/RESULTS.md) (summary at the top).
+This file only covers how to run the tooling.
 
-## Files
+## Which tool for which question
+
+| Question | Tool |
+|---|---|
+| Are the report's sections (shown and hidden) still earning their place? | `reassess.mjs` — exact replay of `lib/report.js`, on `data/bars.db` or any longer history with `--db` |
+| Does a *new* daily-bar idea beat the average stock, robustly? | `discover.mjs` (two universes, BH correction, null signals, `--vol-matched`) |
+| Score a quick list of flag combos, buy or sell side? | `strategy-search/score-flags.mjs` on a `build-cache.mjs` database |
+| Exhaustive combo × exit search, TradingView-strategy-tester style? | `strategy-search/search.mjs` (+ `--null` calibration) |
+| Does it work as a real portfolio (position caps, drawdown, vs SPY)? | `strategy-search/portfolio.mjs`, `strategy-search/rotation.mjs` |
+| Do continuous MACD/RSI/ATR values rank stocks? | `strategy-search/export-features.mjs` → `rank-study.py` → `rule-study.py` |
+| Insider buying (SEC Form 4)? | `insider/` |
+
+**Judge signals by excess return over the same-day average stock — and, for
+anything volatility-tilted, over stocks of the same volatility — never by raw
+win rate.** On a high-beta watchlist, win rate mostly measures the market.
+
+## Layout
+
+### Core harness (`research/`)
 
 | File | Purpose |
 |------|---------|
-| `features.mjs` | Single source of truth for the ~24 atomic signal "flags" the brute-force search draws from (both what's live in production and previously-unused `indicators.js` fields like `signal`/`warning`/`divergence`). Add a flag here and both scripts below pick it up automatically. |
-| `build-cache.mjs` | Reads a bars database, runs `lib/indicators.js` once per symbol, and caches every flag from `features.mjs` plus forward returns (5/10/20/30 sessions) into a wide SQLite table (`bar_features`) — so `brute-force.mjs` never has to recompute indicators per combo. |
-| `brute-force.mjs` | Tests every pairwise combo of `features.mjs`'s flags, applies a split-period out-of-sample check (history split at its median date; a combo only "passes" if it wins >50% in *both* halves independently and beats its stronger leg's own win rate), and ranks survivors. Guards against overfitting a ~300-combo search on a few hundred trading days. |
-| `fetch-universe.mjs` | Pulls a fixed number of trading days (default 200) of daily OHLCV for a ticker list straight from Yahoo Finance into its own bars database — for testing signals against a bigger/different universe than the watchlist. |
-| `discover.mjs` | Scores **new** daily-bar signal ideas (relative strength, momentum rank, squeeze, pullbacks, highs, gaps, accumulation, oscillators) plus the shipped sections as benchmarks, on one or more universes: return 10/15/20 sessions out, as excess over the same-day average stock, one event per episode, Benjamini-Hochberg-corrected across every signal tested, and a "same sign in all three time thirds of every universe" winner screen. `--selftest` runs 40 random signals plus one that peeks ahead to calibrate it; `--combos` adds a pair search. Use this, not `brute-force.mjs`, for daily-bar ideas: `brute-force.mjs` passes combos on raw win rate above 50%, which on a high-beta watchlist mostly measures market drift. `node research/discover.mjs --db=SP=research/sp_daily.db --db=WL=research/wl_daily.db` after `fetch-universe.mjs --days=540` for each. |
-| `reassess.mjs` | Re-scores every Telegram report section — shown **and** hidden — on what price did 10/15/20 sessions (2-4 weeks) after each signal, as excess return over the same-day average watchlist stock, per episode (re-fires within 10 sessions count once) and per time window (before logging / live in-sample / out of sample). Replays `lib/report.js`'s own detectors over `data/bars.db`, so it scores exactly what the scanner says; read-only. `node research/reassess.mjs [--oos-start=2026-09-23]`. The decision rules for acting on its output are in `architecture.md` ("2026-11-12 reassessment"). |
-| `strategy-search/` | Trigger + up-to-2-filter combo search over ~80 flags x 10 exit models (hold, ATR brackets, trail, EMA/RSI exits), train/validate/test split, episode de-dup, and a **null run** (flags circularly shifted) to count how many "80% win" cells appear by luck. `search.mjs`, `dip-study.mjs` (market-dip regime by independent episode), `flags.mjs`, `exits.mjs`. See `strategy-search/PLAN.md` and `RESULTS.md`; works on daily and 4H databases. |
-| `*_tickers.txt` | Ticker lists for `fetch-universe.mjs`: `sp500_tickers.txt` (S&P 500), `nasdaq100_tickers.txt` (Nasdaq-100/QQQ), `watchlist_qqq_tickers.txt` (this repo's `watchlist.txt` ∪ Nasdaq-100, deduped). Regenerate by re-fetching from source if they go stale — see git history for where each came from. |
-| `*.db` | Generated, gitignored, fully disposable. Never commit these. |
+| `fetch-universe.mjs` | Daily OHLCV for a ticker list from Yahoo into its own bars database. `--tickers`, `--out`, `--days` (default 200; 2600 ≈ 10 years). |
+| `fetch-4h-watchlist.mjs` | ~2 years of 1h bars (Yahoo's limit) resampled to 4H. |
+| `features.mjs` | Single source of truth for the atomic signal flags (production signals, unused `indicators.js` fields, fair-value family, bearish mirrors). Add a flag here and the cache/brute-force/score-flags tools pick it up. |
+| `build-cache.mjs` | Runs `lib/indicators.js` once per symbol and caches every `features.mjs` flag plus forward returns (`--horizons`) into a wide SQLite table. |
+| `brute-force.mjs` | Pairwise combos of `features.mjs` flags with a split-period check. Passes on raw win rate, so prefer `discover.mjs` for daily ideas. |
+| `discover.mjs` | Scores new daily ideas plus the shipped sections as benchmarks: excess vs same-day average stock (or same volatility quintile with `--vol-matched`), episodes, BH correction, winner screen across time thirds of every universe. `--selftest`, `--combos`. |
+| `reassess.mjs` | Exact replay of `lib/report.js` detectors, scored 10/15/20 sessions out per episode and per window. `--db=<bars db>`, `--watchlist-only`, `--from/--live-start/--oos-start`. Decision rules: `architecture.md`. |
+| `*_tickers.txt` | `sp500_tickers.txt`, `nasdaq100_tickers.txt`, `watchlist_qqq_tickers.txt` (watchlist ∪ Nasdaq-100). |
 
-## Usage
+### `strategy-search/` — November 2026 search for a stronger signal
 
-**Research against the production watchlist** (`data/bars.db`, full stored history):
+| File | Purpose |
+|------|---------|
+| `RESULTS.md` | The research log, parts 1–7+, summary at the top. `PLAN.md` is the original plan for part 1. |
+| `flags.mjs`, `exits.mjs`, `search.mjs` | ~80 self-contained flags × 10 exit models (hold, ATR brackets, trail, EMA/RSI exits), bitset combo search with train/validate/test split and a `--null` run. |
+| `dip-study.mjs` | Market-dip (SPY RSI<40) regime, scored per independent dip episode. |
+| `portfolio.mjs` | Capped-slot portfolio backtester with SPY / equal-weight benchmarks and overlays. |
+| `rotation.mjs` | ETF relative-strength rotation on a survivorship-light ETF universe. |
+| `score-flags.mjs` | Scores sell-side candidates (default) or the shipped/hidden buy signals (`--buy`) on a feature cache. |
+| `export-features.mjs` | Continuous production-indicator features + forward returns per stock-day → `research/.out_feat.csv`. |
+| `rank-study.py` | Daily rank IC per feature and walk-forward linear / LightGBM scores (needs `numpy`, `pandas`, `lightgbm`). |
+| `rule-study.py` | Transparent "pullback in a strong trend" rules distilled from the model picks. |
 
-```bash
-node research/build-cache.mjs
-node research/brute-force.mjs
-```
+### `insider/` — SEC Form 4 insider purchases
 
-**Research against a different universe** — fetch it first, then point both
-scripts at it with `--bars-db`/`--out`/`--db`:
+| File | Purpose |
+|------|---------|
+| `fetch-sec.mjs` | Downloads the SEC quarterly Insider Transactions Data Sets into `research/sec_raw/`. Needs `SEC_USER_AGENT="<client name> <contact email>"` in the environment (SEC fair-access policy); the script never stores one. |
+| `build-insider.mjs` | Extracts open-market purchases → `insider/purchases.csv`. |
+| `insider-study.mjs` | Event study vs same-day and same-volatility stocks, tradable rows only. `--db=<bars db>`. |
 
-```bash
-node research/fetch-universe.mjs --tickers=research/sp500_tickers.txt --out=research/universe.db
-node research/build-cache.mjs --bars-db=research/universe.db --out=research/universe_features.db
-node research/brute-force.mjs --db=research/universe_features.db
-```
+## Generated data (all gitignored, all rebuildable)
 
-`fetch-universe.mjs` also takes `--days=N` to change the trading-day window
-(default 200) and defaults to `sp500_tickers.txt` if `--tickers` is omitted.
+In the cloud sandbox, Node needs `NODE_USE_ENV_PROXY=1 NODE_EXTRA_CA_CERTS=/root/.ccr/ca-bundle.crt` for Yahoo.
 
-## The one hard lesson from using this so far
+| File | Built by |
+|------|---------|
+| `long_daily.db` (563 stocks, 10y daily) | `fetch-universe.mjs --tickers=<watchlist_qqq ∪ sp500 ∪ SPY,QQQ,IWM> --out=research/long_daily.db --days=2600` |
+| `d10_wl.db`, `d10_rest.db` | `long_daily.db` split into watchlist / non-watchlist symbols (each with SPY, QQQ) for `discover.mjs` |
+| `long_4h.db` | `fetch-4h-watchlist.mjs --tickers=research/watchlist_qqq_tickers.txt --out=research/long_4h.db` |
+| `etf_daily.db` | `fetch-universe.mjs` with the ETF list in `strategy-search/RESULTS.md` part 2, `--days=2600` |
+| `long_features.db`, `wl_features.db` | `build-cache.mjs --bars-db=research/long_daily.db` (or `data/bars.db`) `--horizons=10,15,20` |
+| `.out_feat.csv` | `strategy-search/export-features.mjs` |
+| `.out_search_*.json` | `strategy-search/search.mjs` |
+| `sec_raw/`, `insider/purchases.csv`, `insider_prices.db` | `insider/fetch-sec.mjs`, `build-insider.mjs`, then `fetch-universe.mjs` over the purchase symbols |
 
-**A combo validating on a big, diverse universe is necessary but not
-sufficient — it still has to be checked against the exact symbols the
-scanner actually runs on.** Bullish Divergence + Strong Trend replicated
-cleanly across the S&P 500, Nasdaq-100, and a combined watchlist+QQQ set, and
-shipped on that basis — but tested directly against the watchlist's own
-`data/bars.db` history, it was flat (49-53% win, trending down with horizon).
-The edge was real, just concentrated in the ~70 QQQ-only names inside that
-combined set, not the watchlist's own ~104. Always run the final check against
-`data/bars.db` itself before shipping anything found on a broader dataset.
+## Hard lessons
+
+- **Validate on the watchlist itself.** A combo that replicates on a big
+  universe can still be flat on the symbols the scanner runs on (Bullish
+  Divergence, September 2026). Run the final check on `data/bars.db` or with
+  `--watchlist-only`.
+- **Win rate is shaped by the exit.** A 1×ATR target with a 3×ATR stop "wins"
+  ~68% of the time on a random stock; see `RESULTS.md` part 1.
+- **High volatility fakes edges.** Several signals lost half their excess once
+  measured against stocks of the same volatility (`--vol-matched`).
+- **Per-signal averages don't survive portfolio constraints** when signals
+  cluster on the same days (dip buying, `RESULTS.md` part 2).
+- **Today's index members flatter everything** (survivorship); prefer
+  survivorship-light universes (ETFs) or treat results as upper bounds.

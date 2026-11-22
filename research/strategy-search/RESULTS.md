@@ -1,4 +1,24 @@
-# Strategy search — results (2026-11-17)
+# Signal research log — November 2026
+
+Can MACD / RSI / ATR / FVG-style signals, or anything else in reach, give the
+Telegram channel a strong, reliable edge? Every test scores returns against the
+same-day average stock (or stocks of the same volatility), over 10 years of
+daily data for 563 stocks (S&P 500 ∪ Nasdaq-100 ∪ watchlist), with time splits
+and the watchlist checked separately. How to run each tool: `../README.md`.
+
+| Part | Question | Verdict |
+|---|---|---|
+| 1 | 436k indicator combos × exits: anything at 80% win rate? | Only via a market-dip regime + a 1:3 target/stop that "wins" 68% on a random stock. Not an edge. |
+| 2 | As real portfolios (caps, drawdown, vs SPY)? | Dip buying, RSI(2), ETF rotation: none beat SPY. Stock momentum looks huge but is survivorship-biased. |
+| 3 | Sell signals (mirrors of the buy signals)? | No edge; flagged watchlist stocks went on to outperform. |
+| 4 | Shipped signals on 10y / 2y (approximate flags) | Divergence modestly positive; MACD Green no edge. |
+| 5 | Exact production replay, 10y, + vol-matched discovery | MACD Green + Strong Trend negative in every window → removed from the report (PR #3). Divergence +0.3%, fading. No new winner once volatility is matched. |
+| 6 | Insider buying (SEC Form 4, 296k purchases) | No edge in large or small/mid caps. |
+| 7 | MACD/RSI/ATR as continuous, ranked features | "Pullback in a strong trend": +0.4–0.9% per 3 weeks vs same-volatility stocks, positive most years in both universes, loses in bear markets. Modest; candidate for a dry-run section. |
+
+---
+
+# Part 1 — strategy search (2026-11-17)
 
 Method and caveats: see [PLAN.md](./PLAN.md). Reproduce:
 
@@ -177,7 +197,7 @@ including delisted names) to size momentum without survivorship.
 # Part 3 — sell-side signals (2026-11-21)
 
 Question: can mirrors of the shipped buy signals be shipped as SELL signals?
-`sell-signals.mjs` scores 18 candidates (bearish divergence, MACD turning red,
+`score-flags.mjs` scores 18 candidates (bearish divergence, MACD turning red,
 RSI reject from 70 / cross 50 down, ATR trailing-stop breakdown, 20d VWAP loss,
 bearish FVG formed/retest, and gated variants) as forward return 10/15/20
 sessions later **in excess of the same-day average stock**, one event per
@@ -197,14 +217,14 @@ percent over 3 weeks, far below any cost or a short's borrow/risk. As exit
 warnings they also lose to simply holding. (Part of the watchlist result is
 hindsight selection and momentum continuation in a bull market, which makes a
 sell signal look worse here than it would elsewhere — but nothing suggests an
-edge.) If re-tested later, use `sell-signals.mjs`, and require negative excess
+edge.) If re-tested later, use `score-flags.mjs`, and require negative excess
 in all three thirds on the watchlist itself.
 
 ---
 
 # Part 4 — the two SHIPPED signals on 10 years / last 2 years (2026-11-21)
 
-`sell-signals.mjs --buy [--watchlist-only] [--since=YYYY-MM-DD]`. Flags approximate
+`score-flags.mjs --buy [--watchlist-only] [--since=YYYY-MM-DD]`. Flags approximate
 the production detectors (single-bar flags + one event per 10 sessions; not a
 replay of `lib/report.js`), excess = vs same-day average stock, 15 sessions.
 
@@ -259,3 +279,65 @@ in the same 60d-volatility quintile, so high-beta names can't fake an edge.
 Conclusion: on daily price/volume data at a 2–4 week horizon there is no
 signal that clears a "strong" bar. MACD Green + Strong Trend should be removed;
 Bullish Divergence is weak and fading.
+
+---
+
+# Part 6 — insider buying (SEC Form 4), 2016–2026 (2026-11-21)
+
+Data: SEC quarterly Insider Transactions Data Sets 2016Q1–2026Q1
+(`research/insider/fetch-sec.mjs`, needs `SEC_USER_AGENT` set in the environment;
+`build-insider.mjs` extracts 296,486 open-market purchases). Event = purchase
+public on its filing date, entry at the next session's close; one event per
+symbol per 20 sessions; directors/officers only, ≥ $10k. Outcome vs same-day
+average stock and vs same-day stocks in the same volatility quintile (VM);
+tradable rows only (price ≥ $5, 20d dollar volume ≥ $1M), returns clipped to
+[−90%, +200%] (`insider-study.mjs`). Without those filters the small-cap
+baseline is wrecked by penny stocks/unadjusted reverse splits — don't drop them.
+
+| Universe | Best variant, 20d VM excess | Range across 7 variants × 4 horizons |
+|---|---|---|
+| ~4,100 small/mid caps with insider buys (`insider_prices.db`) | +0.3% (t 1.0) | −0.7% … +0.5%, no |t| > 1.5, medians ≈ 0 |
+| 563 large caps (`long_daily.db`) | −0.1% | −2.0% … +0.2%; 3+ insider clusters −1.1% to −1.7% |
+
+Insiders buy after declines (−3% to −10% over the prior 20 sessions) and the
+stock does not outperform comparable stocks afterwards, at 2–12 weeks, in any
+definition (any buy, ≥$100k, ≥$500k, CEO/CFO, clusters of 2 or 3+ insiders).
+Survivorship (delisted names have no Yahoo prices) flatters these numbers, so
+the true effect is if anything lower. Consistent with reports that the
+published insider effect has largely faded since the 2000s.
+
+Verdict: not a signal for the report.
+
+---
+
+# Part 7 — MACD / RSI / ATR as continuous, ranked features (2026-11-22)
+
+`export-features.mjs` (production `lib/indicators.js` values: RSI, MACD/ATR,
+distance from ATR trailing stop, ATR%, ADX, EMA200 distance, score; plus past
+returns as a control) → `rank-study.py` → `rule-study.py`. 563 stocks,
+2017-07 → 2026-10, price ≥ $5, $5M+ daily dollar volume; returns from the next
+open; target = 15-session return minus same-day stocks in the same volatility
+bucket (removes the high-beta trap).
+
+1. **Single features don't rank stocks.** Daily rank correlation with the target
+   is within ±0.02 for every feature; no top decile is reliably positive by year.
+2. **Walk-forward models** (each year scored by a model trained only on earlier
+   years): top-10% picks ≈ +0.1% (t ≤ 1.2) for every feature set. The top 1%
+   of an all-features LightGBM: **+0.79% vs same-volatility-bucket stocks,
+   positive in all 8 years 2019–2026**, also in the down-market half (+0.7%);
+   watchlist +1.5%. Indicators-only LightGBM: +0.60%, 6/8 years.
+3. **What the model picks — "pullback in a strong trend":** median pick 18% above
+   EMA200, +12–15% over 60 days, but −3% over 20 days, RSI ~48, MACD histogram
+   < 0, 1.5–1.9 ATR below the ATR trailing stop, ADX ~26, volatile (87–90th pct).
+4. **Transparent rules** (`rule-study.py`; ADX ≥ 20, top-30% volatility, plus one
+   pullback trigger × trend × momentum, 12 pre-set variants, first-day events,
+   10-session cooldown): all 12 positive, +0.4 to +0.9% vs same-volatility
+   stocks (+0.7 to +1.5% vs the average stock), positive in 6–8 of 10 years
+   (incl. 2017–18, before any model pick), **t ≤ 2.1**, losses in 2021–22.
+   Best balance across both universes: `RSI < 50 + ≥10–20% above EMA200 +
+   60d ≥ 20%` — +0.6 to +0.9%, REST and watchlist both positive, ~2–3 events/week.
+
+Verdict: the first MACD/RSI/ATR pattern with a consistent sign across years and
+universes, but modest (≈ +0.5–0.9% per 3 weeks over comparable stocks) and not
+statistically strong; it fails in bear markets. Good enough to log and watch
+live (dry run), not to call "strong".
