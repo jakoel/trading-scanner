@@ -260,6 +260,16 @@ The 2026-11-12 reassessment had ~9 months of data with ~7 weeks out of sample. `
 - **RSI ≥ 70 + VWAP Reclaim** is the most consistent hidden section in both universes but fires rarely (about once a fortnight across 563 stocks, a few times a year on the watchlist). A candidate to bring back if the 2026-12-10 re-check agrees.
 - A 10-year run of `research/discover.mjs` over two disjoint universes (non-watchlist / watchlist), with a new `--vol-matched` baseline (excess vs same-day stocks in the same volatility quintile), found **no new signal** that passes the winner screen: the best (oversold high-volatility stocks in uptrends) was half volatility exposure and has faded to ~0 since 2020. Full numbers: `research/strategy-search/RESULTS.md`, part 5.
 
+### November 2026 signal research: summary
+
+A broad search for a stronger signal (details and every number in `research/strategy-search/RESULTS.md`; tooling in `research/README.md`). Decisions that follow from it:
+
+- **No indicator combination earns a "strong" label.** ~436k MACD/RSI/ATR/oscillator combos × 10 exit rules found high win rates only from a lopsided target/stop or a market-dip regime; as capped portfolios, dip buying, RSI(2) pullbacks and ETF rotation all trailed buy-and-hold SPY.
+- **Sell-side mirrors of the buy signals have no edge** — don't add sell sections.
+- **Insider open-market buying (SEC Form 4, 2016–2026) has no edge** in large or small/mid caps.
+- **One modest, consistent pattern:** "pullback in a strong trend" (well above EMA200, strong 60-day return, short-term pullback via RSI < 50 / MACD histogram < 0 / below the ATR trailing stop, ADX ≥ 20, volatile) beat same-volatility stocks by ~0.4–0.9% over 3 weeks, positive in most years on both the watchlist and the wider universe, losing in 2021–22. Candidate for a dry-run section, not yet shipped.
+- **Measure against same-volatility stocks** (`discover.mjs --vol-matched`) for anything that tilts toward volatile names; several apparent edges halved under it.
+
 `getActiveSignals(r)` is the single source of truth for which signals are "firing" on a result entry — both `formatTelegramMessages()` and `lib/signalLog.js` use it, so the Telegram report and the historical signal log can never drift apart.
 
 ## Historical Signal Log (`lib/signalLog.js`)

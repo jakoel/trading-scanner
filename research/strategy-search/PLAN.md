@@ -1,4 +1,4 @@
-# Strategy search — plan
+# Part 1 plan — strategy search (historical, 2026-11-17)
 
 Goal: mimic TradingView's strategy tester at scale. Take a big pool of
 indicator-based entry flags, try every combination (trigger + up to 2 filters),

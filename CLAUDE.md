@@ -39,7 +39,7 @@ Prints the report to stdout instead of posting it — bar data and `data/signals
 | `architecture.md` | Full technical reference |
 | `legacy/` | Original TradingView/CDP-based scanner — kept for local cross-checking against the live indicator, not used by automation. See `legacy/README` note in architecture.md. |
 | `reference/` | Raw Pine source (`macd.txt`, `indicatorSuite.txt`) that `lib/indicators.js` was ported from |
-| `research/` | Standalone signal-combo backtesting tooling, not part of the scan pipeline — see `research/README.md`. Findings/decisions from using it live in `architecture.md`, not there. `research/reassess.mjs` re-scores every report section (shown and hidden) on what price did 2–4 weeks after each signal — re-run it ~2026-12-10 (see "2026-11-12 reassessment" in `architecture.md`). |
+| `research/` | Standalone signal research tooling, not part of the scan pipeline — see `research/README.md` (which tool answers which question, how to rebuild the 10-year databases). Decisions from using it live in `architecture.md`; the full research log with every number is `research/strategy-search/RESULTS.md`. `research/reassess.mjs` re-scores every report section (shown and hidden) on what price did 2–4 weeks after each signal — re-run it ~2026-12-10 (see "2026-11-12 reassessment" in `architecture.md`). |
 
 ## Adding new signals
 

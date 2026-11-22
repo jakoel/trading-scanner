@@ -1,4 +1,24 @@
-# Strategy search — results (2026-11-17)
+# Signal research log — November 2026
+
+Can MACD / RSI / ATR / FVG-style signals, or anything else in reach, give the
+Telegram channel a strong, reliable edge? Every test scores returns against the
+same-day average stock (or stocks of the same volatility), over 10 years of
+daily data for 563 stocks (S&P 500 ∪ Nasdaq-100 ∪ watchlist), with time splits
+and the watchlist checked separately. How to run each tool: `../README.md`.
+
+| Part | Question | Verdict |
+|---|---|---|
+| 1 | 436k indicator combos × exits: anything at 80% win rate? | Only via a market-dip regime + a 1:3 target/stop that "wins" 68% on a random stock. Not an edge. |
+| 2 | As real portfolios (caps, drawdown, vs SPY)? | Dip buying, RSI(2), ETF rotation: none beat SPY. Stock momentum looks huge but is survivorship-biased. |
+| 3 | Sell signals (mirrors of the buy signals)? | No edge; flagged watchlist stocks went on to outperform. |
+| 4 | Shipped signals on 10y / 2y (approximate flags) | Divergence modestly positive; MACD Green no edge. |
+| 5 | Exact production replay, 10y, + vol-matched discovery | MACD Green + Strong Trend negative in every window → removed from the report (PR #3). Divergence +0.3%, fading. No new winner once volatility is matched. |
+| 6 | Insider buying (SEC Form 4, 296k purchases) | No edge in large or small/mid caps. |
+| 7 | MACD/RSI/ATR as continuous, ranked features | "Pullback in a strong trend": +0.4–0.9% per 3 weeks vs same-volatility stocks, positive most years in both universes, loses in bear markets. Modest; candidate for a dry-run section. |
+
+---
+
+# Part 1 — strategy search (2026-11-17)
 
 Method and caveats: see [PLAN.md](./PLAN.md). Reproduce:
 
@@ -177,7 +197,7 @@ including delisted names) to size momentum without survivorship.
 # Part 3 — sell-side signals (2026-11-21)
 
 Question: can mirrors of the shipped buy signals be shipped as SELL signals?
-`sell-signals.mjs` scores 18 candidates (bearish divergence, MACD turning red,
+`score-flags.mjs` scores 18 candidates (bearish divergence, MACD turning red,
 RSI reject from 70 / cross 50 down, ATR trailing-stop breakdown, 20d VWAP loss,
 bearish FVG formed/retest, and gated variants) as forward return 10/15/20
 sessions later **in excess of the same-day average stock**, one event per
@@ -197,14 +217,14 @@ percent over 3 weeks, far below any cost or a short's borrow/risk. As exit
 warnings they also lose to simply holding. (Part of the watchlist result is
 hindsight selection and momentum continuation in a bull market, which makes a
 sell signal look worse here than it would elsewhere — but nothing suggests an
-edge.) If re-tested later, use `sell-signals.mjs`, and require negative excess
+edge.) If re-tested later, use `score-flags.mjs`, and require negative excess
 in all three thirds on the watchlist itself.
 
 ---
 
 # Part 4 — the two SHIPPED signals on 10 years / last 2 years (2026-11-21)
 
-`sell-signals.mjs --buy [--watchlist-only] [--since=YYYY-MM-DD]`. Flags approximate
+`score-flags.mjs --buy [--watchlist-only] [--since=YYYY-MM-DD]`. Flags approximate
 the production detectors (single-bar flags + one event per 10 sessions; not a
 replay of `lib/report.js`), excess = vs same-day average stock, 15 sessions.
 

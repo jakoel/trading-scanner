@@ -1,13 +1,18 @@
 /**
- * Scores candidate SELL / exit signals the way the project scores buy signals
- * (research/reassess.mjs): forward return 10/15/20 sessions later as EXCESS over
- * the same-day average stock, one event per episode (re-fires within 10 sessions
- * of the same symbol count once), split into time thirds. A useful sell signal
- * has NEGATIVE excess, consistently, in every third.
+ * Scores daily signal flags from research/features.mjs (via a build-cache.mjs
+ * feature database) on forward return 10/15/20 sessions later, as EXCESS over
+ * the same-day average stock, one event per episode (re-fires within 10
+ * sessions of the same symbol count once), split into time thirds.
+ *
+ * Default: SELL-side candidates — a useful sell signal has NEGATIVE excess in
+ * every third. --buy: the shipped and hidden BUY signals instead (positive = worked).
  *
  *   node research/build-cache.mjs --bars-db=research/long_daily.db --out=research/long_features.db --horizons=10,15,20
  *   node research/build-cache.mjs --bars-db=data/bars.db --out=research/wl_features.db --horizons=10,15,20
- *   node research/strategy-search/sell-signals.mjs --db=research/long_features.db [--watchlist-only]
+ *   node research/strategy-search/score-flags.mjs --db=research/long_features.db [--buy] [--watchlist-only] [--since=YYYY-MM-DD]
+ *
+ * Flags approximate the production detectors (single-bar flags); for an exact
+ * replay of lib/report.js use research/reassess.mjs --db=... instead.
  */
 import { readFileSync } from 'fs';
 import { dirname, join } from 'path';
