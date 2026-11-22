@@ -56,6 +56,7 @@ win rate.** On a high-beta watchlist, win rate mostly measures the market.
 | `export-features.mjs` | Continuous production-indicator features + forward returns per stock-day → `research/.out_feat.csv`. |
 | `rank-study.py` | Daily rank IC per feature and walk-forward linear / LightGBM scores (needs `numpy`, `pandas`, `lightgbm`). |
 | `rule-study.py` | Transparent "pullback in a strong trend" rules distilled from the model picks. |
+| `fvg-macd-study.py` | FVG + MACD events within 1–3 trading days, with each leg alone and a shifted-FVG null as benchmarks (part 8). |
 
 ### `insider/` — SEC Form 4 insider purchases
 

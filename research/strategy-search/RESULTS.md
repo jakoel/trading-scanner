@@ -15,6 +15,7 @@ and the watchlist checked separately. How to run each tool: `../README.md`.
 | 5 | Exact production replay, 10y, + vol-matched discovery | MACD Green + Strong Trend negative in every window → removed from the report (PR #3). Divergence +0.3%, fading. No new winner once volatility is matched. |
 | 6 | Insider buying (SEC Form 4, 296k purchases) | No edge in large or small/mid caps. |
 | 7 | MACD/RSI/ATR as continuous, ranked features | "Pullback in a strong trend": +0.4–0.9% per 3 weeks vs same-volatility stocks, positive most years in both universes, loses in bear markets. Modest; candidate for a dry-run section. |
+| 8 | FVG + MACD within 1–3 trading days | No FVG combo works (0/143, no better than a shifted null); FVG alone is flat. But **MACD Turned Green in a strong trend** (≥10% above EMA200, 60d ≥ +10%): +1.14% per 3 weeks vs same-volatility stocks, 9/10 years positive, both universes. Leading candidate. |
 
 ---
 
@@ -341,3 +342,33 @@ Verdict: the first MACD/RSI/ATR pattern with a consistent sign across years and
 universes, but modest (≈ +0.5–0.9% per 3 weeks over comparable stocks) and not
 statistically strong; it fails in bear markets. Good enough to log and watch
 live (dry run), not to call "strong".
+
+---
+
+# Part 8 — FVG + MACD within 1–3 trading days (2026-11-22)
+
+`export-features.mjs` now also exports production event flags: FVG formed /
+retest (`lib/fairValue.js`, with and without its displacement filter) and MACD
+bull cross (histogram turns +), Turned Green (bull cross with line < 0), zero
+cross (line > 0 with histogram > 0). `fvg-macd-study.py`: combo fires when the
+second leg fires within W = 1/2/3 sessions of the other, either order; × 4
+contexts (none, above EMA200, ADX ≥ 20, strong trend = ≥ 10% above EMA200 and
+60d return ≥ 10%); first-day events, 10-session cooldown; scored vs same-day
+stocks in the same 5% volatility bucket. Winner screen fixed in advance
+(t ≥ 2.5, ≥ 8/10 years positive, both universes positive, beats both legs);
+null = FVG flags circularly shifted per symbol.
+
+- **No FVG + MACD combo passes (0 of 143; null 0 of 142).** Real grid average
+  +0.11% (68% of combos > 0) vs null +0.04% (51%); best real t 2.1 vs null max 2.5.
+- **FVG legs alone are flat** (−0.05% to +0.3%, filtered or not, any context).
+  Adding an FVG to a MACD event never improved it.
+- **The one leg that stands out: MACD Turned Green in a strong trend** —
+  +1.14% vs same-volatility stocks at 15 sessions (t 2.9, n 797, ~1.7/week on
+  563 stocks), +1.34% vs the average stock, positive in 9/10 years incl.
+  2021–22 (2026 −0.4% so far), REST +1.48% (540) / watchlist +0.43% (257).
+  Needs both trend conditions (each alone +0.3–0.65%). The production gate it
+  replaced (Green + ADX ≥ 25) is −0.12%, 2/10 years — trend context matters, ADX doesn't.
+- Caveats: picked from 28 leg × context cells, and the "strong trend"
+  thresholds came from part 7's model analysis; 2017–18 (+0.9%, +0.8%) is the
+  only window untouched by that design step. Treat as the leading candidate,
+  confirm live before calling it strong.
