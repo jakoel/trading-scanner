@@ -287,3 +287,37 @@ the true effect is if anything lower. Consistent with reports that the
 published insider effect has largely faded since the 2000s.
 
 Verdict: not a signal for the report.
+
+---
+
+# Part 7 — MACD / RSI / ATR as continuous, ranked features (2026-11-22)
+
+`export-features.mjs` (production `lib/indicators.js` values: RSI, MACD/ATR,
+distance from ATR trailing stop, ATR%, ADX, EMA200 distance, score; plus past
+returns as a control) → `rank-study.py` → `rule-study.py`. 563 stocks,
+2017-07 → 2026-10, price ≥ $5, $5M+ daily dollar volume; returns from the next
+open; target = 15-session return minus same-day stocks in the same volatility
+bucket (removes the high-beta trap).
+
+1. **Single features don't rank stocks.** Daily rank correlation with the target
+   is within ±0.02 for every feature; no top decile is reliably positive by year.
+2. **Walk-forward models** (each year scored by a model trained only on earlier
+   years): top-10% picks ≈ +0.1% (t ≤ 1.2) for every feature set. The top 1%
+   of an all-features LightGBM: **+0.79% vs same-volatility-bucket stocks,
+   positive in all 8 years 2019–2026**, also in the down-market half (+0.7%);
+   watchlist +1.5%. Indicators-only LightGBM: +0.60%, 6/8 years.
+3. **What the model picks — "pullback in a strong trend":** median pick 18% above
+   EMA200, +12–15% over 60 days, but −3% over 20 days, RSI ~48, MACD histogram
+   < 0, 1.5–1.9 ATR below the ATR trailing stop, ADX ~26, volatile (87–90th pct).
+4. **Transparent rules** (`rule-study.py`; ADX ≥ 20, top-30% volatility, plus one
+   pullback trigger × trend × momentum, 12 pre-set variants, first-day events,
+   10-session cooldown): all 12 positive, +0.4 to +0.9% vs same-volatility
+   stocks (+0.7 to +1.5% vs the average stock), positive in 6–8 of 10 years
+   (incl. 2017–18, before any model pick), **t ≤ 2.1**, losses in 2021–22.
+   Best balance across both universes: `RSI < 50 + ≥10–20% above EMA200 +
+   60d ≥ 20%` — +0.6 to +0.9%, REST and watchlist both positive, ~2–3 events/week.
+
+Verdict: the first MACD/RSI/ATR pattern with a consistent sign across years and
+universes, but modest (≈ +0.5–0.9% per 3 weeks over comparable stocks) and not
+statistically strong; it fails in bear markets. Good enough to log and watch
+live (dry run), not to call "strong".
